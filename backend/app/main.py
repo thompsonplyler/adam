@@ -32,9 +32,15 @@ def register():
     return jsonify({"success": True, "user": new_user.to_dict()}), 201
 
 @main.route('/check_login', methods=['GET', 'OPTIONS'])
-@login_required
 def check_login():
-    return jsonify({"success": True, "user": current_user.to_dict()})
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
+    @login_required
+    def protected_check():
+        return jsonify({"success": True, "user": current_user.to_dict()})
+    
+    return protected_check()
 
 @main.route('/logout', methods=['POST', 'OPTIONS'])
 @login_required

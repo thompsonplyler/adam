@@ -40,13 +40,19 @@ def join_game():
     if not game:
         return jsonify({'error': 'Game not found'}), 404
 
-    if game.status != 'lobby':
-        return jsonify({'error': 'This game is not in the lobby'}), 403
-
-    # Check if user is already in the game
+    # Check if user is already a player in this game
     player = Player.query.filter_by(user_id=current_user.id, game_id=game.id).first()
     if player:
-        return jsonify({'error': 'You are already in this game'}), 400
+        # If they are, just mark them as active again
+        player.is_active = True
+        db.session.commit()
+        return jsonify({
+            'message': f'Successfully rejoined game {game.game_code}',
+            'game_id': game.id
+        }), 200
+
+    if game.status != 'lobby':
+        return jsonify({'error': 'This game is not in the lobby'}), 403
 
     new_player = Player(user_id=current_user.id, game_id=game.id)
     db.session.add(new_player)
@@ -234,13 +240,15 @@ def get_game_state(game_code):
     stories_submitted = [s.author_id for s in game.stories]
     
     players = []
+    # Only show active players in the game room
     for p in game.players:
-        players.append({
-            'id': p.user.id,
-            'username': p.user.username,
-            'score': p.score,
-            'has_submitted': p.user.id in stories_submitted
-        })
+        if p.is_active:
+            players.append({
+                'id': p.user.id,
+                'username': p.user.username,
+                'score': p.score,
+                'has_submitted': p.user.id in stories_submitted
+            })
 
     response = {
         'id': game.id,
@@ -286,20 +294,22 @@ def leave_game(game_code):
     if not player:
         return jsonify({'error': 'You are not in this game'}), 404
 
-    db.session.delete(player)
+    player.is_active = False
+    db.session.commit()
 
-    # Check if the game is now empty
-    if not game.players:
+    # Check if all players are now inactive
+    active_players = Player.query.filter_by(game_id=game.id, is_active=True).all()
+    if not active_players:
         # Nullify the foreign key constraint before deleting stories
         game.current_story_id = None
         db.session.commit()
-
         # Delete all guesses associated with the game's stories first
         story_ids = [s.id for s in game.stories]
         Guess.query.filter(Guess.story_id.in_(story_ids)).delete(synchronize_session=False)
         # Delete all stories
         Story.query.filter_by(game_id=game.id).delete()
-        # Delete the game itself
+        # Finally, delete the player records and the game itself
+        Player.query.filter_by(game_id=game.id).delete()
         db.session.delete(game)
         
     db.session.commit()

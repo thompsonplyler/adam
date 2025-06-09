@@ -13,6 +13,7 @@ class Player(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
     game_id = db.Column(db.Integer, db.ForeignKey('game.id'), primary_key=True)
     score = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
     user = db.relationship('User', back_populates='games')
     game = db.relationship('Game', back_populates='players')
 
@@ -62,6 +63,16 @@ class Game(db.Model):
         super(Game, self).__init__(**kwargs)
         if not self.game_code:
             self.game_code = generate_game_code()
+
+    def to_dict(self, include_players=True):
+        data = {
+            'id': self.id,
+            'game_code': self.game_code,
+            'status': self.status,
+        }
+        if include_players:
+            data['players'] = [p.user.username for p in self.players]
+        return data
 
 class Story(db.Model):
     __tablename__ = 'story'

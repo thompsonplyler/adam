@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Container, Title, Text, Textarea, Stack, Paper, SimpleGrid, Loader, Group } from '@mantine/core';
 import * as api from './api';
 
@@ -183,7 +184,9 @@ export function GameRoom({ gameCode, username, onLeave }) {
     const [story, setStory] = useState('');
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [gameNotFound, setGameNotFound] = useState(false);
     const pollInterval = useRef(null);
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchState = async () => {
@@ -191,7 +194,12 @@ export function GameRoom({ gameCode, username, onLeave }) {
                 const gameState = await api.getGameState(gameCode);
                 setGame(gameState);
             } catch (err) {
-                setError(err.message);
+                if (err.status === 404) {
+                    setGameNotFound(true);
+                    clearInterval(pollInterval.current);
+                } else {
+                    setError(err.message);
+                }
             }
         };
 
@@ -200,6 +208,26 @@ export function GameRoom({ gameCode, username, onLeave }) {
 
         return () => clearInterval(pollInterval.current); // Cleanup on component unmount
     }, [gameCode]);
+
+    useEffect(() => {
+        if (gameNotFound) {
+            const timer = setTimeout(() => {
+                navigate('/');
+            }, 3000); // Redirect after 3 seconds
+            return () => clearTimeout(timer);
+        }
+    }, [gameNotFound, navigate]);
+
+    if (gameNotFound) {
+        return (
+            <Container>
+                <Title order={2} ta="center" mt="xl">Game Not Found</Title>
+                <Text ta="center" mt="md">This game does not exist or has ended.</Text>
+                <Text ta="center" mt="sm">Redirecting you to the lobby...</Text>
+                <Loader style={{ display: 'block', margin: '20px auto' }} />
+            </Container>
+        );
+    }
 
     const handleStorySubmit = async (e) => {
         e.preventDefault();

@@ -37,9 +37,16 @@ The connection between the frontend and backend exposed a series of significant 
     - **The Fix:** We corrected the `handleLogin` and `verifyUser` functions in `App.jsx` to properly extract `response.user` before setting the state. This ensured the rest of the application had access to a clean and predictable user object.
 
 4.  **Full-Page Reloads on Navigation:** Leaving a game would cause a full-page reload and log the user out.
+
     - **The Problem:** We were using `window.location.href = '/'` for navigation.
     - **The Fix:** This was replaced with the `useNavigate` hook from `react-router-dom` (`navigate('/')`), which correctly handles internal navigation in a Single-Page Application without losing state.
 
+5.  **Incomplete Model Serialization:** API endpoints would crash when trying to return database objects as JSON.
+    - **The Problem:** The `User` and `Game` models were missing `.to_dict()` methods, causing an `AttributeError` whenever an endpoint tried to serialize them for a response. The most recent occurrence of this caused a `500 Internal Server Error` on the `/games/active` endpoint, which prevented the lobby from loading.
+    - **The Fix:** We added `to_dict()` methods to both the `User` and `Game` models, ensuring they could be reliably converted to JSON.
+
 **Current Status**
 
-The application has undergone significant debugging. After chasing several symptoms, we believe we have identified and fixed the final root cause of our authentication failures: a URL mismatch between the frontend API calls (e.g., `/login`) and the backend routes (e.g., `/users/login`). The backend routes have been corrected. We are now pending final user testing to confirm that the entire application flow is stable and works as expected.
+**VICTORY:** The critical session persistence bug has been solved. Users now remain logged in after a page refresh. This was accomplished by correctly handling `OPTIONS` preflight requests on the `/check_login` route before the `@login_required` decorator is invoked.
+
+**Next Objective:** The logic for leaving and rejoining a game is flawed. When a user leaves a game, their `Player` record is deleted, preventing them from seeing or rejoining the game even if it still exists. The next step is to modify this behavior to support rejoining active games.

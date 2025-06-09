@@ -11,10 +11,37 @@ async function request(endpoint, options = {}) {
     });
 
     if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const error = new Error();
+        error.status = response.status;
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            try {
+                const errorData = await response.json();
+                error.message = errorData.error || `HTTP error! status: ${response.status}`;
+            } catch {
+                error.message = `HTTP error! status: ${response.status}`;
+            }
+        } else {
+            try {
+                const errorText = await response.text();
+                error.message = errorText || `HTTP error! status: ${response.status}`;
+            } catch {
+                error.message = `HTTP error! status: ${response.status}`;
+            }
+        }
+        throw error;
     }
-    return response.json();
+
+    const text = await response.text();
+    try {
+        // Handle empty response body
+        if (text) {
+            return JSON.parse(text);
+        }
+        return null;
+    } catch {
+        return text;
+    }
 }
 
 export const login = (username, password) => {
@@ -31,27 +58,7 @@ export const register = (username, password) => {
     });
 };
 
-export const createGame = async () => {
-    const response = await fetch(`${API_URL}/games/create`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-    });
-
-    const responseBody = await response.text();
-
-    if (!response.ok) {
-        throw new Error(`Failed to create game: ${responseBody}`);
-    }
-
-    try {
-        return JSON.parse(responseBody);
-    } catch (e) {
-        throw new Error(`Failed to parse server response: ${e.message}`);
-    }
-};
+export const createGame = () => request('/games/create', { method: 'POST' });
 
 export const joinGame = (game_code) => {
     return request('/games/join', {
@@ -86,30 +93,6 @@ export const leaveGame = (game_code) => request(`/games/${game_code}/leave`, { m
 
 export const getActiveGames = () => request('/games/active');
 
-export const logout = async () => {
-    const response = await fetch(`${API_URL}/logout`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-    });
-    if (!response.ok) {
-        throw new Error('Logout failed');
-    }
-    return await response.json();
-}
+export const logout = () => request('/logout', { method: 'POST' });
 
-export const checkLogin = async () => {
-    const response = await fetch(`${API_URL}/check_login`, {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-    });
-    if (!response.ok) {
-        throw new Error('Not logged in');
-    }
-    return await response.json();
-}; 
+export const checkLogin = () => request('/check_login'); 
