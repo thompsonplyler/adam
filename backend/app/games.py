@@ -253,7 +253,8 @@ def get_game_state(game_code):
     if game.current_story:
         response['current_story'] = {
             'id': game.current_story.id,
-            'content': game.current_story.content
+            'content': game.current_story.content,
+            'author_id': game.current_story.author_id
         }
 
     return jsonify(response), 200 

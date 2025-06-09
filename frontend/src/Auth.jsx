@@ -22,9 +22,8 @@ export function Auth({ onLogin }) {
         setError(null);
         try {
             const action = isRegister ? register : login;
-            await action(values.username, values.password);
-            // If login/register is successful, call the onLogin callback
-            onLogin(values.username);
+            const response = await action(values.username, values.password);
+            onLogin(response);
         } catch (err) {
             setError(err.message);
         }

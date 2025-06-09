@@ -3,7 +3,8 @@ import { Button, Container, Title, Text, Textarea, Stack, Paper, SimpleGrid, Loa
 import * as api from './api';
 
 function LobbyView({ game, username, handleStartGame, handleStorySubmit, story, setStory, loading }) {
-    const isCreator = game.players.length > 0 && game.players[0].username === username;
+    const isCreator = game.is_creator;
+    const canStart = game.players.length > 1 && game.players.every(p => p.has_submitted);
 
     return (
         <>
@@ -54,8 +55,8 @@ function LobbyView({ game, username, handleStartGame, handleStorySubmit, story, 
                     size="lg"
                     onClick={handleStartGame}
                     loading={loading}
-                // Optional: Disable until all players have submitted
-                // disabled={!game.players.every(p => p.has_submitted)}
+                    disabled={!canStart}
+                    title={!canStart ? "Waiting for all players to submit their stories..." : "Start the game!"}
                 >
                     Start Game
                 </Button>

@@ -87,7 +87,7 @@ export const leaveGame = (game_code) => request(`/games/${game_code}/leave`, { m
 export const getActiveGames = () => request('/games/active');
 
 export const logout = async () => {
-    const response = await fetch(`${API_URL}/users/logout`, {
+    const response = await fetch(`${API_URL}/logout`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -101,7 +101,7 @@ export const logout = async () => {
 }
 
 export const checkLogin = async () => {
-    const response = await fetch(`${API_URL}/users/check_login`, {
+    const response = await fetch(`${API_URL}/check_login`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',

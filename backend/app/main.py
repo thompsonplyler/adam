@@ -5,17 +5,21 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 main = Blueprint('main', __name__)
 
-@main.route('/users/login', methods=['POST'])
+@main.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
     data = request.get_json()
     user = User.query.filter_by(username=data['username']).first()
-    if user and check_password_hash(user.password, data['password']):
+    if user and check_password_hash(user.password_hash, data['password']):
         login_user(user)
         return jsonify({"success": True, "user": user.to_dict()})
     return jsonify({"success": False, "message": "Invalid credentials"}), 401
 
-@main.route('/users/register', methods=['POST'])
+@main.route('/register', methods=['POST', 'OPTIONS'])
 def register():
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
     data = request.get_json()
     if User.query.filter_by(username=data['username']).first():
         return jsonify({"success": False, "message": "Username already exists"}), 400
@@ -27,12 +31,12 @@ def register():
     login_user(new_user)
     return jsonify({"success": True, "user": new_user.to_dict()}), 201
 
-@main.route('/users/check_login', methods=['GET', 'OPTIONS'])
+@main.route('/check_login', methods=['GET', 'OPTIONS'])
 @login_required
 def check_login():
     return jsonify({"success": True, "user": current_user.to_dict()})
 
-@main.route('/users/logout', methods=['POST', 'OPTIONS'])
+@main.route('/logout', methods=['POST', 'OPTIONS'])
 @login_required
 def logout():
     logout_user()

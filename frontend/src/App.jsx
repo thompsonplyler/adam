@@ -15,8 +15,8 @@ function App() {
   useEffect(() => {
     const verifyUser = async () => {
       try {
-        const loggedInUser = await checkLogin();
-        setUser(loggedInUser);
+        const response = await checkLogin();
+        setUser(response.user);
       } catch {
         setUser(null);
       } finally {
@@ -26,8 +26,8 @@ function App() {
     verifyUser();
   }, []);
 
-  const handleLogin = (loggedInUser) => {
-    setUser(loggedInUser);
+  const handleLogin = (response) => {
+    setUser(response.user);
   };
 
   const handleLogout = async () => {
@@ -50,7 +50,7 @@ function App() {
             user ? <Lobby username={user.username} onLogout={handleLogout} /> : <Navigate to="/login" />
           } />
           <Route path="/game/:gameCode" element={
-            user ? <GameRoomWrapper username={user.username} /> : <Navigate to="/login" />
+            user ? <GameRoomWrapper user={user} /> : <Navigate to="/login" />
           } />
         </Routes>
       </BrowserRouter>
@@ -59,14 +59,14 @@ function App() {
 }
 
 // Wrapper component to extract params and pass them to GameRoom
-const GameRoomWrapper = ({ username }) => {
+const GameRoomWrapper = ({ user }) => {
   const { gameCode } = useParams();
   const navigate = useNavigate();
 
   const handleLeave = () => {
     navigate('/');
   }
-  return <GameRoom gameCode={gameCode} username={username} onLeave={handleLeave} />;
+  return <GameRoom gameCode={gameCode} username={user.username} onLeave={handleLeave} />;
 };
 
 
