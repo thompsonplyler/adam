@@ -16,7 +16,7 @@ def create_game():
     db.session.commit()
 
     # Add the creator as the first player
-    player = Player(user_id=current_user.id, game_id=new_game.id)
+    player = Player(user_id=current_user.id, game_id=new_game.id, is_creator=True)
     db.session.add(player)
     db.session.commit()
     
@@ -193,6 +193,27 @@ def get_results(game_code):
         'total_scores': {p.user.username: p.score for p in game.players}
     }), 200
 
+@games.route('/<string:game_code>/reveal', methods=['POST'])
+@login_required
+def reveal_results(game_code):
+    """
+    Sets the current story's state to reveal the results.
+    """
+    game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
+    player = Player.query.filter_by(user_id=current_user.id, game_id=game.id).first()
+
+    # Security checks
+    if not player or not player.is_creator:
+        return jsonify({'error': 'Only the game creator can reveal results.'}), 403
+    if not game.current_story_id:
+        return jsonify({'error': 'There is no active story to reveal.'}), 400
+
+    story = game.current_story
+    story.results_revealed = True
+    db.session.commit()
+    
+    return jsonify({'message': f'Results for story {story.id} revealed.'}), 200
+
 @games.route('/stories/submit', methods=['POST'])
 @login_required
 def submit_story():
@@ -239,6 +260,15 @@ def get_game_state(game_code):
 
     stories_submitted = [s.author_id for s in game.stories]
     
+    # Get players who have already guessed on the current story
+    guessers = []
+    if game.current_story_id:
+        guesses = Guess.query.filter_by(story_id=game.current_story_id).all()
+        guesser_ids = [g.guesser_id for g in guesses]
+        # We need the full player objects for their usernames
+        guesser_players = Player.query.filter(Player.user_id.in_(guesser_ids), Player.game_id == game.id).all()
+        guessers = [{'id': p.user_id, 'username': p.user.username} for p in guesser_players]
+
     players = []
     # Only show active players in the game room
     for p in game.players:
@@ -250,22 +280,20 @@ def get_game_state(game_code):
                 'has_submitted': p.user.id in stories_submitted
             })
 
-    response = {
+    return jsonify({
         'id': game.id,
         'game_code': game.game_code,
         'status': game.status,
         'players': players,
-        'is_creator': game.players[0].user_id == current_user.id # Simple assumption for now
-    }
-
-    if game.current_story:
-        response['current_story'] = {
+        'is_creator': any(p.user.id == current_user.id for p in game.players if p.is_creator),
+        'current_story': {
             'id': game.current_story.id,
             'content': game.current_story.content,
-            'author_id': game.current_story.author_id
-        }
-
-    return jsonify(response), 200 
+            'author_id': game.current_story.author_id,
+            'results_revealed': game.current_story.results_revealed
+        } if game.current_story else None,
+        'guessers': guessers
+    }), 200 
 
 @games.route('/active', methods=['GET'])
 @login_required

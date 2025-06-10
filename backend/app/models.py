@@ -14,6 +14,7 @@ class Player(db.Model):
     game_id = db.Column(db.Integer, db.ForeignKey('game.id'), primary_key=True)
     score = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_creator = db.Column(db.Boolean, default=False, nullable=False)
     user = db.relationship('User', back_populates='games')
     game = db.relationship('Game', back_populates='players')
 
@@ -56,8 +57,8 @@ class Game(db.Model):
     game_mode = db.Column(db.String(64), default='free_for_all') # free_for_all, teams
     players = db.relationship('Player', back_populates='game')
     stories = db.relationship('Story', foreign_keys='Story.game_id', backref='game', lazy='dynamic')
-    current_story_id = db.Column(db.Integer, db.ForeignKey('story.id'), nullable=True)
-    current_story = db.relationship('Story', foreign_keys=[current_story_id])
+    current_story_id = db.Column(db.Integer, db.ForeignKey('story.id', name='fk_game_current_story_id', use_alter=True), nullable=True)
+    current_story = db.relationship('Story', foreign_keys=[current_story_id], post_update=True)
 
     def __init__(self, **kwargs):
         super(Game, self).__init__(**kwargs)
@@ -79,6 +80,7 @@ class Story(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
     is_read = db.Column(db.Boolean, default=False)
+    results_revealed = db.Column(db.Boolean, default=False, nullable=False)
     game_id = db.Column(db.Integer, db.ForeignKey('game.id'))
     author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     guesses = db.relationship('Guess', backref='story', lazy='dynamic')

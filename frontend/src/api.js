@@ -78,7 +78,7 @@ export const getGameState = (game_code) => request(`/games/${game_code}/state`);
 
 export const startGame = (game_code) => request(`/games/${game_code}/start`, { method: 'POST' });
 
-export const getNextStory = (game_code) => request(`/games/${game_code}/story`);
+export const getNextStory = (game_code) => request(`/games/${game_code}/story`, { method: 'GET' });
 
 export const submitGuess = (game_code, guessed_user_id) => {
     return request(`/games/${game_code}/guess`, {
@@ -87,11 +87,13 @@ export const submitGuess = (game_code, guessed_user_id) => {
     });
 };
 
-export const getResults = (game_code) => request(`/games/${game_code}/results`);
+export const getResults = (game_code) => request(`/games/${game_code}/results`, { method: 'GET' });
+
+export const revealResults = (game_code) => request(`/games/${game_code}/reveal`, { method: 'POST' });
 
 export const leaveGame = (game_code) => request(`/games/${game_code}/leave`, { method: 'POST' });
 
-export const getActiveGames = () => request('/games/active');
+export const getActiveGames = () => request('/games/active', { method: 'GET' });
 
 export const logout = () => request('/logout', { method: 'POST' });
 

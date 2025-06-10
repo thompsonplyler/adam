@@ -28,4 +28,22 @@ def create_app(config_class=Config):
     from app.games import games
     app.register_blueprint(games, url_prefix='/games')
 
+    @app.cli.command('db-reset')
+    def db_reset_command():
+        """Drops, recreates, and seeds the database."""
+        from app.models import User
+        with app.app_context():
+            db.drop_all()
+            db.create_all()
+
+            # Seed users
+            users = ['testuser1', 'testuser2', 'testuser3']
+            for u in users:
+                user = User(username=u)
+                user.set_password('password')
+                db.session.add(user)
+            
+            db.session.commit()
+            print('Database has been reset and seeded!')
+
     return app 

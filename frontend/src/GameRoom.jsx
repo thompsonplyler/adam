@@ -67,7 +67,6 @@ function LobbyView({ game, username, handleStartGame, handleStorySubmit, story, 
 }
 
 function InProgressView({ game, username, onNextRound }) {
-    const [view, setView] = useState('reading'); // reading, guessing, results
     const [selectedGuess, setSelectedGuess] = useState(null);
     const [results, setResults] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -75,13 +74,32 @@ function InProgressView({ game, username, onNextRound }) {
 
     const currentUser = game.players.find(p => p.username === username);
     const isAuthor = game.current_story?.author_id === currentUser?.id;
+    const hasGuessed = game.guessers?.some(g => g.id === currentUser?.id);
 
-    // Reset view when a new story comes in
+    // Reset selected guess when a new story comes in
     useEffect(() => {
-        setView('reading');
         setResults(null);
         setSelectedGuess(null);
     }, [game.current_story?.id]);
+
+    // Fetch results when they are revealed for the current story
+    useEffect(() => {
+        const fetchResultsIfNeeded = async () => {
+            if (game.current_story?.results_revealed && !results) {
+                setLoading(true);
+                setError(null);
+                try {
+                    const res = await api.getResults(game.game_code);
+                    setResults(res);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        };
+        fetchResultsIfNeeded();
+    }, [game.current_story?.id, game.current_story?.results_revealed, results, game.game_code]);
 
     const handleGuessSubmit = async () => {
         if (!selectedGuess) return;
@@ -89,7 +107,7 @@ function InProgressView({ game, username, onNextRound }) {
         setError(null);
         try {
             await api.submitGuess(game.game_code, selectedGuess);
-            setView('waiting');
+            // State will now update via polling
         } catch (err) {
             setError(err.message);
         } finally {
@@ -97,13 +115,12 @@ function InProgressView({ game, username, onNextRound }) {
         }
     };
 
-    const handleShowResults = async () => {
+    const handleRevealResults = async () => {
         setLoading(true);
         setError(null);
         try {
-            const res = await api.getResults(game.game_code);
-            setResults(res);
-            setView('results');
+            // Tell the server to reveal results, polling will update everyone's UI
+            await api.revealResults(game.game_code);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -115,7 +132,20 @@ function InProgressView({ game, username, onNextRound }) {
         return <Text mt="lg">Waiting for the next story...</Text>;
     }
 
-    if (view === 'results') {
+    // --- VIEW LOGIC ---
+
+    // 1. RESULTS VIEW: If results are revealed, show them.
+    if (game.current_story.results_revealed) {
+        // Data is being fetched by the useEffect hook
+        if (!results) {
+            return (
+                <Container mt="lg">
+                    <Loader style={{ display: 'block', margin: '20px auto' }} />
+                    <Text ta="center">Calculating results...</Text>
+                </Container>
+            );
+        }
+
         return (
             <Container mt="lg">
                 <Title order={3}>Round Results!</Title>
@@ -131,17 +161,63 @@ function InProgressView({ game, username, onNextRound }) {
         );
     }
 
-    if (view === 'waiting') {
+    const allNonAuthors = game.players.filter(p => p.id !== game.current_story.author_id);
+    const allGuessesIn = allNonAuthors.length === game.guessers.length;
+
+    // 2. AUTHOR VIEW: If user is the author, show the waiting/spectator view.
+    if (isAuthor) {
+        const guessers = game.guessers || [];
+        const nonAuthorPlayers = game.players.filter(p => p.id !== currentUser.id);
+        const waitingForPlayers = nonAuthorPlayers.filter(p => !guessers.find(g => g.id === p.id));
+
+        return (
+            <Container mt="lg">
+                <Title order={3}>Your story is being guessed!</Title>
+                <Paper withBorder p="lg" mt="md" mb="xl">
+                    <Text fs="italic">"{game.current_story.content}"</Text>
+                </Paper>
+
+                <SimpleGrid cols={2}>
+                    <Paper withBorder p="sm">
+                        <Text ta="center" fw={700}>Guessed ({guessers.length})</Text>
+                        {guessers.map(guesser => <Text key={guesser.id} ta="center">{guesser.username}</Text>)}
+                        {guessers.length === 0 && <Text c="dimmed" ta="center">No one yet...</Text>}
+                    </Paper>
+                    <Paper withBorder p="sm" bg="var(--mantine-color-gray-light)">
+                        <Text ta="center" fw={700}>Waiting For ({waitingForPlayers.length})</Text>
+                        {waitingForPlayers.map(player => <Text key={player.id} ta="center">{player.username}</Text>)}
+                    </Paper>
+                </SimpleGrid>
+
+                {allGuessesIn && (
+                    <Text ta="center" mt="lg" fw={700}>All guesses are in!</Text>
+                )}
+
+                {game.is_creator && allGuessesIn && (
+                    <Button onClick={handleRevealResults} fullWidth mt="md" loading={loading}>
+                        Show Results
+                    </Button>
+                )}
+            </Container>
+        );
+    }
+
+    // 3. GUESSER WAITING VIEW: If user has guessed but results aren't revealed.
+    if (hasGuessed) {
         return (
             <Container mt="lg">
                 <Text>Guess submitted! Waiting for other players...</Text>
-                {/* In a real app, we'd poll or use websockets to know when all guesses are in. */}
-                {/* For now, the creator can just advance when ready. */}
-                {game.is_creator && <Button onClick={handleShowResults} fullWidth mt="md" loading={loading}>Show Results</Button>}
+                <Loader style={{ display: 'block', margin: '20px auto' }} />
+                {game.is_creator && allGuessesIn && (
+                    <Button onClick={handleRevealResults} fullWidth mt="md" loading={loading}>
+                        Show Results
+                    </Button>
+                )}
             </Container>
         )
     }
 
+    // 4. GUESSING VIEW: Default view for players who haven't guessed yet.
     return (
         <Container mt="lg">
             <Title order={3}>Who wrote this story?</Title>
@@ -149,31 +225,25 @@ function InProgressView({ game, username, onNextRound }) {
                 <Text fs="italic">"{game.current_story.content}"</Text>
             </Paper>
 
-            {view === 'reading' && <Button fullWidth onClick={() => setView('guessing')}>Ready to Guess</Button>}
-
-            {view === 'guessing' && (
-                <>
-                    <Title order={4}>Your Guess:</Title>
-                    <SimpleGrid cols={2} mt="md">
-                        {game.players
-                            .filter(p => p.username !== username) // Can't guess yourself
-                            .map(p => (
-                                <Button
-                                    key={p.id}
-                                    variant={selectedGuess === p.id ? 'filled' : 'outline'}
-                                    onClick={() => setSelectedGuess(p.id)}
-                                    disabled={isAuthor}
-                                >
-                                    {p.username}
-                                </Button>
-                            ))
-                        }
-                    </SimpleGrid>
-                    <Button onClick={handleGuessSubmit} disabled={!selectedGuess || isAuthor} mt="xl" fullWidth loading={loading}>
-                        {isAuthor ? "This is your story, you can't guess!" : "Submit Final Guess"}
-                    </Button>
-                </>
-            )}
+            <Title order={4}>Your Guess:</Title>
+            <SimpleGrid cols={2} mt="md">
+                {game.players
+                    .filter(p => p.id !== currentUser.id) // Can't guess yourself
+                    .map(p => (
+                        <Button
+                            key={p.id}
+                            variant={selectedGuess === p.id ? 'filled' : 'outline'}
+                            onClick={() => setSelectedGuess(p.id)}
+                            disabled={isAuthor}
+                        >
+                            {p.username}
+                        </Button>
+                    ))
+                }
+            </SimpleGrid>
+            <Button onClick={handleGuessSubmit} disabled={!selectedGuess || isAuthor} mt="xl" fullWidth loading={loading}>
+                Submit Final Guess
+            </Button>
             {error && <Text c="red" mt="md">{error}</Text>}
         </Container>
     );
@@ -284,7 +354,9 @@ export function GameRoom({ gameCode, username, onLeave }) {
         setError(null);
         try {
             await api.getNextStory(gameCode);
-            // Polling will pick up the new story
+            // Polling will pick up the new story, but let's fetch immediately for responsiveness
+            const newState = await api.getGameState(gameCode);
+            setGame(newState);
         } catch (err) {
             setError(err.message);
         } finally {
