@@ -4,9 +4,35 @@ This document outlines the development process, key architectural decisions, and
 
 **Tech Stack**
 
-- **Frontend:** React (with Vite), React Three Fiber/Drei, Mantine UI, React Router
-- **Backend:** Flask, SQLAlchemy, Flask-Login, Flask-Cors, Psycopg2
+- **Frontend:** React (with Vite), Mantine UI, React Router
+- **Backend:** Flask, SQLAlchemy, Flask-Login, Flask-Cors, Werkzeug, Psycopg2
 - **Database:** PostgreSQL
+
+**Phase 5: Core Gameplay Loop & State Synchronization**
+
+This phase involved implementing the actual gameplay, which uncovered and required fixing several critical bugs related to state management between the server and the clients.
+
+1.  **Author's Waiting Room:**
+
+    - **The Problem:** The player whose story was being guessed saw the same (disabled) guessing interface as everyone else, with no indication of what they were waiting for.
+    - **The Fix:** We implemented a dedicated "spectator" view for the story's author. This view now shows the author their own story and two columns: a live list of who has already guessed and who is still thinking. This makes the waiting period interactive.
+
+2.  **Centralizing Game State:**
+
+    - **The Problem:** The game would get "stuck" after the first round. The creator would click "Show Results," but only their screen would change, leaving everyone else in a waiting state indefinitely.
+    - **The Root Cause:** This was a major architectural flaw. The decision to show the results was being handled by local state within each client's browser, not by the server.
+    - **The Lesson & Solution:** The server must be the single source of truth. We refactored the application to use a new `results_revealed` flag on the `Story` model in the database. A new API endpoint allows the creator to set this flag, and the frontend was completely refactored to derive its view from this server-authoritative state. This ensures all players' screens advance in unison.
+
+3.  **React Infinite Re-render Loop:**
+
+    - **The Problem:** After the first round, the application would crash with a "Too many re-renders" error.
+    - **The Root Cause:** In the process of refactoring, a data-fetching function was incorrectly called directly inside the component's main render body. This created an infinite loop: render -> fetch data -> update state -> trigger re-render.
+    - **The Fix:** The data fetching logic was moved into a `useEffect` hook. This is the correct React pattern, ensuring the data is only fetched when its specific dependencies (like the story ID) change, not on every single render.
+
+4.  **Database Seeding & Password Hashing:**
+    - **The Problem:** After a database reset, logins would fail with an `Invalid hash method` error.
+    - **The Root Cause:** The database seeding script was using the `flask_bcrypt` library to hash passwords, but the login verification function was using the `werkzeug.security` library. The two libraries use incompatible hash formats.
+    - **The Fix:** The seeding script was corrected to use the `user.set_password()` method, ensuring that the same `werkzeug` library is used for both creating and checking passwords.
 
 **Phase 4: Polish & Infrastructure**
 
