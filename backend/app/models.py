@@ -1,30 +1,14 @@
-from app import db, login_manager
+from app import db
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 import string
 import random
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-class Player(db.Model):
-    __tablename__ = 'player'
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), primary_key=True)
-    score = db.Column(db.Integer, default=0)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    is_creator = db.Column(db.Boolean, default=False, nullable=False)
-    user = db.relationship('User', back_populates='games')
-    game = db.relationship('Game', back_populates='players')
-
-class User(db.Model, UserMixin):
+class User(UserMixin, db.Model):
     __tablename__ = 'user'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(64), index=True, unique=True, nullable=False)
-    password_hash = db.Column(db.String(256))
-    games = db.relationship('Player', back_populates='user')
-    stories = db.relationship('Story', backref='author', lazy='dynamic')
+    username = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(256), nullable=False)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -35,11 +19,27 @@ class User(db.Model, UserMixin):
     def to_dict(self):
         return {
             'id': self.id,
-            'username': self.username
+            'username': self.username,
         }
 
-    def __repr__(self):
-        return f'<User {self.username}>'
+class Player(db.Model):
+    __tablename__ = 'player'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False)
+    score = db.Column(db.Integer, default=0)
+    has_submitted_story = db.Column(db.Boolean, default=False, nullable=False)
+    game = db.relationship('Game', back_populates='players')
+    story = db.relationship('Story', backref='author', uselist=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'game_id': self.game_id,
+            'score': self.score,
+            'has_submitted_story': self.has_submitted_story
+        }
 
 def generate_game_code(length=4):
     """Generate a unique, short game code."""
@@ -53,45 +53,52 @@ class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     game_code = db.Column(db.String(4), unique=True, index=True)
     status = db.Column(db.String(64), default='lobby') # lobby, in_progress, finished
-    game_length = db.Column(db.String(64), default='medium') # short, medium, long
-    game_mode = db.Column(db.String(64), default='free_for_all') # free_for_all, teams
     players = db.relationship('Player', back_populates='game')
     stories = db.relationship('Story', foreign_keys='Story.game_id', backref='game', lazy='dynamic')
     current_story_id = db.Column(db.Integer, db.ForeignKey('story.id', name='fk_game_current_story_id', use_alter=True), nullable=True)
-    current_story = db.relationship('Story', foreign_keys=[current_story_id], post_update=True)
+    
+    @property
+    def current_story(self):
+        if self.current_story_id:
+            return Story.query.get(self.current_story_id)
+        return None
 
     def __init__(self, **kwargs):
         super(Game, self).__init__(**kwargs)
         if not self.game_code:
             self.game_code = generate_game_code()
 
-    def to_dict(self, include_players=True):
-        data = {
+    def to_dict(self):
+        return {
             'id': self.id,
             'game_code': self.game_code,
             'status': self.status,
+            'players': [p.to_dict() for p in self.players],
+            'current_story': self.current_story.to_dict() if self.current_story else None,
         }
-        if include_players:
-            data['players'] = [p.user.username for p in self.players]
-        return data
 
 class Story(db.Model):
     __tablename__ = 'story'
     id = db.Column(db.Integer, primary_key=True)
     content = db.Column(db.Text, nullable=False)
     is_read = db.Column(db.Boolean, default=False)
-    results_revealed = db.Column(db.Boolean, default=False, nullable=False)
-    game_id = db.Column(db.Integer, db.ForeignKey('game.id'))
-    author_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
     guesses = db.relationship('Guess', backref='story', lazy='dynamic')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'content': self.content,
+            'author_id': self.author_id,
+        }
 
 class Guess(db.Model):
     __tablename__ = 'guess'
     id = db.Column(db.Integer, primary_key=True)
     story_id = db.Column(db.Integer, db.ForeignKey('story.id'), nullable=False)
-    guesser_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    guessed_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    guesser_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
+    guessed_player_id = db.Column(db.Integer, db.ForeignKey('player.id'), nullable=False)
 
-    # Relationships to get User objects
-    guesser = db.relationship('User', foreign_keys=[guesser_id])
-    guessed_player = db.relationship('User', foreign_keys=[guessed_id]) 
+    guesser = db.relationship('Player', foreign_keys=[guesser_id])
+    guessed_player = db.relationship('Player', foreign_keys=[guessed_player_id]) 

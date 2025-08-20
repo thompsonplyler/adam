@@ -8,6 +8,18 @@ This document outlines the development process, key architectural decisions, and
 - **Backend:** Flask, SQLAlchemy, Flask-Login, Flask-Cors, Werkzeug, Psycopg2
 - **Database:** PostgreSQL
 
+**Electron Client (New Architecture)**
+
+- Separate Electron app under `electron/` with TypeScript main and Vite + React + Mantine renderer.
+- Shared theme lives in `shared/theme.ts` and is imported by both the web frontend and Electron renderer to ensure consistent visuals and easy theme evolution.
+- Dev on Windows uses three terminals: `npm run dev:renderer` (Vite at 5174), `npm run dev:main:build` (tsc watch to `dist-main`), and `npm run dev:main` (Electron, waits for 5174).
+- Lessons learned:
+  - Avoid trying to run `.ts` directly in Electron main. Compile with `tsc` to CommonJS and set `package.json` main to the compiled JS.
+  - When coordinating multiple dev processes on Windows PowerShell, prefer separate terminals or use scripts that are PowerShell-friendly (avoid `&&` in user shell; inside npm scripts `&&` is fine).
+  - For Socket.IO testing, mirroring handlers on `/` during TESTING unblocks harness limitations; production clients use `/ws`.
+  - Vite renderer needs an explicit `root` and `--host` when served from a subdirectory. Without it, Electron can load 404 at `/` even though Vite says it’s “ready”. Setting the renderer’s vite config `root` to the renderer folder and binding `--host` resolved the blank window.
+  - Socket.IO and CORS must allow both `http://localhost:5173` (web) and `http://localhost:5174` (Electron renderer) or Electron will show disconnected and the Network tab will show repeated 400s.
+
 **Phase 5: Core Gameplay Loop & State Synchronization**
 
 This phase involved implementing the actual gameplay, which uncovered and required fixing several critical bugs related to state management between the server and the clients.

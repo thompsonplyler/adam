@@ -2,6 +2,24 @@
 
 This document outlines the phased development plan to evolve the "It Wasn't Me" game from its current state to the full vision described by Adam. The core principle is to build foundational features first and then layer more complex logic and polish on top.
 
+## Must-Pass Test Gates (No Forward Progress Without Green)
+
+These checks must pass before moving to the next step. If any gate fails later, we stop and fix before adding features.
+
+- API base path alignment: Frontend calls `/api/...` and backend serves under `/api/...` with CORS enabled.
+- Backend routing best practice: Blueprints under `app/api` are the organizing principle for API modules (e.g., `games`, `auth`).
+- HTTP smoke tests: create game, join game, get state, submit story all succeed (pytest).
+- Websocket basic connectivity: client can connect to `/ws`, join `game:{CODE}` room, receive `state_update` when a story is submitted (pytest-socketio where applicable and manual check via React client).
+- Idempotent page route: `/game/:code` loads and refreshes without 404s.
+- Documentation: README instructions allow a clean setup by a new developer to run backend, frontend, and Electron test client against localhost.
+
+Current status:
+
+- DB connectivity verified against configured PostgreSQL instance.
+- HTTP endpoints verified by tests.
+- Socket tests pass using test-only mirror; browser/Electron manual checks next.
+- Electron main compiles from TypeScript (tsc → dist-main) and loads renderer (Vite at 5174) on Windows.
+
 ## Phase 1: Game Settings (The Foundation)
 
 **Goal:** Allow the game host to configure the game before it starts. This is the prerequisite for all other gameplay variations.
@@ -72,3 +90,43 @@ These items from Adam's vision can be implemented after the core gameplay is rob
 - Player icon selection
 - Superlative awards (e.g., "Most Deceptive")
 - Suspenseful animations for revealing the storyteller.
+
+---
+
+## Active Tasks Log (Architecture & Connectivity)
+
+- Standardize API under `/api` and align frontend calls. [Implemented]
+- Introduce Flask-SocketIO server with `/ws` namespace and per-game rooms `game:{CODE}`. [Implemented]
+- Emit `state_update` on story submission to the appropriate room. [Implemented]
+- Frontend Socket.IO client joins room and refreshes state on `state_update`. [Implemented]
+- Reorganize backend routes using Blueprints under `app/api/` and document as routing principle. [Implemented]
+- Add minimal Electron client for connectivity tests (connect, join room, log events). [Planned]
+- Add backend pytest for HTTP endpoints and a socket echo/room test. [Planned]
+- Add frontend tests for GameRoom render and socket hook behavior (mocked). [Planned]
+
+TODOs:
+
+- Replace test-only socket namespace mirror by making the test harness reliably connect to `/ws` so production and tests share identical namespaces.
+
+Each item above must be covered by tests and/or manual verification steps listed in README.
+
+---
+
+## Near-term Roadmap (Electron small steps)
+
+1. Electron renderer MVP
+
+- Code entry screen to join game by code
+- Connection status badge; room indicator
+- Players list (GET `/api/games/:code/state`) with submission status
+- Live refresh on `state_update` from `/ws`
+
+2. Developer experience
+
+- Document three-terminal dev flow on Windows (renderer, tsc watch, electron)
+- Add basic CSP for renderer in dev to quiet warnings
+
+3. Tests & gates
+
+- Unit tests for socket client and simple rendering
+- Keep backend tests green; no change to HTTP/socket contracts

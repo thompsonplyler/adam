@@ -1,8 +1,7 @@
-const API_URL = 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 async function request(endpoint, options = {}) {
     const response = await fetch(`${API_URL}${endpoint}`, {
-        credentials: 'include',
         ...options,
         headers: {
             'Content-Type': 'application/json',
@@ -44,57 +43,20 @@ async function request(endpoint, options = {}) {
     }
 }
 
-export const login = (username, password) => {
-    return request('/login', {
+export const createGame = () => request('/api/games/create', { method: 'POST' });
+
+export const joinGame = (game_code, name) => {
+    return request('/api/games/join', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ game_code, name }),
     });
 };
 
-export const register = (username, password) => {
-    return request('/users/add', {
+export const getGameState = (game_code) => request(`/api/games/${game_code}/state`);
+
+export const submitStory = (game_code, player_id, story) => {
+    return request(`/api/games/${game_code}/stories`, {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ player_id, story }),
     });
 };
-
-export const createGame = () => request('/games/create', { method: 'POST' });
-
-export const joinGame = (game_code) => {
-    return request('/games/join', {
-        method: 'POST',
-        body: JSON.stringify({ game_code }),
-    });
-};
-
-export const submitStory = (game_id, content) => {
-    return request('/games/stories/submit', {
-        method: 'POST',
-        body: JSON.stringify({ game_id, content }),
-    });
-};
-
-export const getGameState = (game_code) => request(`/games/${game_code}/state`);
-
-export const startGame = (game_code) => request(`/games/${game_code}/start`, { method: 'POST' });
-
-export const getNextStory = (game_code) => request(`/games/${game_code}/story`, { method: 'GET' });
-
-export const submitGuess = (game_code, guessed_user_id) => {
-    return request(`/games/${game_code}/guess`, {
-        method: 'POST',
-        body: JSON.stringify({ guessed_user_id }),
-    });
-};
-
-export const getResults = (game_code) => request(`/games/${game_code}/results`, { method: 'GET' });
-
-export const revealResults = (game_code) => request(`/games/${game_code}/reveal`, { method: 'POST' });
-
-export const leaveGame = (game_code) => request(`/games/${game_code}/leave`, { method: 'POST' });
-
-export const getActiveGames = () => request('/games/active', { method: 'GET' });
-
-export const logout = () => request('/logout', { method: 'POST' });
-
-export const checkLogin = () => request('/check_login'); 

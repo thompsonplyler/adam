@@ -5,7 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 main = Blueprint('main', __name__)
 
-@main.route('/login', methods=['POST', 'OPTIONS'])
+@main.route('/api/login', methods=['POST', 'OPTIONS'])
 def login():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -16,7 +16,7 @@ def login():
         return jsonify({"success": True, "user": user.to_dict()})
     return jsonify({"success": False, "message": "Invalid credentials"}), 401
 
-@main.route('/register', methods=['POST', 'OPTIONS'])
+@main.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -31,7 +31,7 @@ def register():
     login_user(new_user)
     return jsonify({"success": True, "user": new_user.to_dict()}), 201
 
-@main.route('/check_login', methods=['GET', 'OPTIONS'])
+@main.route('/api/check_login', methods=['GET', 'OPTIONS'])
 def check_login():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
@@ -42,13 +42,13 @@ def check_login():
     
     return protected_check()
 
-@main.route('/logout', methods=['POST', 'OPTIONS'])
+@main.route('/api/logout', methods=['POST', 'OPTIONS'])
 @login_required
 def logout():
     logout_user()
     return jsonify({"success": True})
 
-@main.route('/games/active')
+@main.route('/api/games/active')
 @login_required
 def get_active_games():
     # Find games where the current user is a player
