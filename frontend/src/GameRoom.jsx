@@ -202,7 +202,7 @@ export function GameRoom() {
                     {isFinished ? 'Finished' : (isInProgress ? 'In Progress' : 'Lobby')}
                 </Badge>
                 {isInProgress && (
-                    <Badge color="grape">{game.stage === 'scoreboard' ? 'Scoreboard' : 'Round intro'}</Badge>
+                    <Badge color="grape">{game.stage === 'scoreboard' ? 'Scoreboard' : (game.stage === 'guessing' ? 'Guessing' : 'Round intro')}</Badge>
                 )}
                 {!isInProgress && <Text c="dimmed" size="sm">{allReady ? 'Everyone is ready' : 'Waiting for all players to be ready'}</Text>}
             </Group>
@@ -240,11 +240,51 @@ export function GameRoom() {
                         <Paper withBorder shadow="md" p="lg" mt="lg">
                             <Group position="apart">
                                 <Title order={3}>Round {game.current_round} of {game.total_rounds}</Title>
-                                <Badge>{game.stage === 'scoreboard' ? 'Scoreboard' : 'Round intro'}</Badge>
+                                <Badge>{game.stage === 'scoreboard' ? 'Scoreboard' : (game.stage === 'guessing' ? 'Guessing' : 'Round intro')}</Badge>
                             </Group>
                             <Text c="dimmed" mt="xs">
-                                {game.stage === 'scoreboard' ? 'Reviewing scores...' : 'Get ready for the next round.'}
+                                {game.stage === 'scoreboard' ? 'Reviewing scores...' : (game.stage === 'guessing' ? 'Make your guess!' : 'Get ready for the next round.')}
                             </Text>
+                            {game.current_story && (
+                                <Paper withBorder shadow="xs" p="md" mt="md">
+                                    <Title order={5}>Current Story</Title>
+                                    <Text mt="xs">{game.current_story.content}</Text>
+                                </Paper>
+                            )}
+                            {game.stage === 'guessing' && currentPlayer && game.current_story && (
+                                <Paper withBorder shadow="xs" p="md" mt="md">
+                                    {game.current_story.author_id === currentPlayer.id ? (
+                                        <Text c="dimmed">You're the author. Waiting for others to guess…</Text>
+                                    ) : (
+                                        <>
+                                            <Title order={5}>Who wrote this?</Title>
+                                            <Group mt="sm">
+                                                {game.players.filter(p => p.id !== currentPlayer.id).map(p => (
+                                                    <Button key={p.id}
+                                                        size="xs"
+                                                        variant="light"
+                                                        disabled={!!game.players.find(pp => pp.id === currentPlayer.id)?.has_guessed_current}
+                                                        onClick={async () => {
+                                                            try {
+                                                                await api.submitGuess(gameCode, currentPlayer.id, p.id);
+                                                                const updated = await api.getGameState(gameCode);
+                                                                setGame(updated);
+                                                            } catch (e) {
+                                                                setError(e.message || 'Could not submit guess');
+                                                            }
+                                                        }}>
+                                                        {p.name}
+                                                    </Button>
+                                                ))}
+                                            </Group>
+                                            {game.players.find(pp => pp.id === currentPlayer.id)?.has_guessed_current && (
+                                                <Text mt="sm">You guessed!</Text>
+                                            )}
+                                            <Text c="dimmed" mt="sm">Guesses: {game.current_story_guess_count} / {Math.max(0, game.players.length - 1)}</Text>
+                                        </>
+                                    )}
+                                </Paper>
+                            )}
                             {isController && (
                                 <Button mt="md" onClick={async () => {
                                     try {

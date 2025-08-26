@@ -75,13 +75,24 @@ class Game(db.Model):
             self.game_code = generate_game_code()
 
     def to_dict(self):
+        players_serialized = []
+        for p in self.players:
+            pd = p.to_dict()
+            if self.current_story_id:
+                try:
+                    pd['has_guessed_current'] = Guess.query.filter_by(story_id=self.current_story_id, guesser_id=p.id).first() is not None
+                except Exception:
+                    pd['has_guessed_current'] = False
+            players_serialized.append(pd)
+
         return {
             'id': self.id,
             'game_code': self.game_code,
             'status': self.status,
             'stage': self.stage,
-            'players': [p.to_dict() for p in self.players],
+            'players': players_serialized,
             'current_story': self.current_story.to_dict() if self.current_story else None,
+            'current_story_guess_count': Guess.query.filter_by(story_id=self.current_story_id).count() if self.current_story_id else 0,
             'current_round': self.current_round,
             'total_rounds': self.total_rounds,
             'play_order': json.loads(self.play_order) if self.play_order else None,

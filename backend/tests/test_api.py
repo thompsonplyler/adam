@@ -44,17 +44,23 @@ def test_submit_story_and_progresses(client):
     assert started['stage'] == 'round_intro'
     assert started['current_round'] == 1
     assert started['total_rounds'] == 2
-    # Advance round: round_intro -> scoreboard
+    # Advance: round_intro -> guessing
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['stage'] == 'guessing'
+    # Advance: guessing -> scoreboard
     adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
     assert adv['stage'] == 'scoreboard'
-    # Advance round: scoreboard -> next round round_intro
+    # Advance: scoreboard -> next round round_intro
     adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
     assert adv['current_round'] == 2
     assert adv['stage'] == 'round_intro'
-    # Advance round: round_intro -> scoreboard
+    # Advance: round 2 round_intro -> guessing
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['stage'] == 'guessing'
+    # Advance: guessing -> scoreboard (round 2)
     adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
     assert adv['stage'] == 'scoreboard'
-    # Advance round: last scoreboard -> finished
+    # Advance: last scoreboard -> finished
     adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
     assert adv['status'] == 'finished'
     assert adv['stage'] == 'finished'

@@ -74,3 +74,10 @@ export const advanceRound = (game_code, controller_id) => {
         body: JSON.stringify({ controller_id }),
     });
 };
+
+export const submitGuess = (game_code, guesser_id, guessed_player_id) => {
+    return request(`/api/games/${game_code}/guess`, {
+        method: 'POST',
+        body: JSON.stringify({ guesser_id, guessed_player_id })
+    });
+};
