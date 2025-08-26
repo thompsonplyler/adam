@@ -85,6 +85,20 @@ class Game(db.Model):
                     pd['has_guessed_current'] = False
             players_serialized.append(pd)
 
+        # Build per-round results if story exists
+        round_results = []
+        if self.current_story_id and self.current_story:
+            try:
+                author_id = self.current_story.author_id
+                for g in Guess.query.filter_by(story_id=self.current_story_id).all():
+                    round_results.append({
+                        'guesser_id': g.guesser_id,
+                        'guessed_player_id': g.guessed_player_id,
+                        'correct': (g.guessed_player_id == author_id)
+                    })
+            except Exception:
+                round_results = []
+
         return {
             'id': self.id,
             'game_code': self.game_code,
@@ -93,6 +107,7 @@ class Game(db.Model):
             'players': players_serialized,
             'current_story': self.current_story.to_dict() if self.current_story else None,
             'current_story_guess_count': Guess.query.filter_by(story_id=self.current_story_id).count() if self.current_story_id else 0,
+            'current_round_results': round_results,
             'current_round': self.current_round,
             'total_rounds': self.total_rounds,
             'play_order': json.loads(self.play_order) if self.play_order else None,

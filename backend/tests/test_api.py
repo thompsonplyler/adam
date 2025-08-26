@@ -110,13 +110,14 @@ def test_guess_and_scoring_flow(client):
     adv2 = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
     assert adv2['stage'] == 'scoreboard'
 
-    # verify scores: correct guesser +1; author +1 per incorrect guess
+    # verify scores: correct guesser +1; author +1 per each non-author who didn't pick author (wrong or no guess)
     scored = client.get(f'/api/games/{code}/state').get_json()
     players = {p['id']: p for p in scored['players']}
     assert players[correct_guesser]['score'] == 1
     if incorrect_guesser is not None:
         assert players[author_id]['score'] >= 1
     else:
-        assert players[author_id]['score'] == 0
+        # Two non-authors: if only one guessed correctly, the author should have 1 point
+        assert players[author_id]['score'] == 1
 
 
