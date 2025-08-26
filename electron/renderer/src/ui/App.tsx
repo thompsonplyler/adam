@@ -10,6 +10,8 @@ export function App() {
     const [gameCode, setGameCode] = useState<string>(() => localStorage.getItem('game_code') || '');
     const [creating, setCreating] = useState(false);
     const [state, setState] = useState<GameState | null>(null);
+    const [deadline, setDeadline] = useState<number | null>(null);
+    const [nowTs, setNowTs] = useState<number>(Date.now());
     const [apiError, setApiError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -24,7 +26,11 @@ export function App() {
         s.on('joined', (m: any) => setRoom(m?.room ?? ''));
         s.on('state_update', async () => {
             if (gameCode) {
-                try { setState(await getGameState(gameCode)); } catch { /* ignore */ }
+                try {
+                    const st = await getGameState(gameCode);
+                    setState(st);
+                    try { setDeadline(Date.now() + ((st?.durations?.[st?.stage as any] || 0) * 1000)); } catch { }
+                } catch { /* ignore */ }
             }
         });
         s.on('session_ended', () => {
@@ -36,6 +42,12 @@ export function App() {
         });
         return () => { s.disconnect(); };
     }, [gameCode]);
+
+    // Tick timer for countdown every 500ms
+    useEffect(() => {
+        const id = setInterval(() => setNowTs(Date.now()), 500);
+        return () => clearInterval(id);
+    }, []);
 
     useEffect(() => {
         if (!gameCode) return;
@@ -68,6 +80,8 @@ export function App() {
 
     const isInProgress = state?.status === 'in_progress';
     const isFinished = state?.status === 'finished';
+    const remainingMs = deadline ? Math.max(0, deadline - nowTs) : 0;
+    const remainingSec = Math.ceil(remainingMs / 1000);
 
     return (
         <Container>
@@ -133,6 +147,9 @@ export function App() {
                     <Text c="dimmed" mt="xs">
                         {state?.stage === 'scoreboard' ? 'Reviewing scores...' : (state?.stage === 'guessing' ? 'Players are guessing…' : 'Get ready for the next round.')}
                     </Text>
+                    {state?.status === 'in_progress' && (
+                        <Text c="dimmed" size="sm" mt="xs">Auto-advances in {remainingSec}s</Text>
+                    )}
                     {state?.current_story && (
                         <Paper withBorder p="md" mt="md">
                             <Title order={5}>Current Story</Title>

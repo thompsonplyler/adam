@@ -115,6 +115,16 @@ Current capabilities
 - Players join from the web client at `/game/CODE`
 - Electron shows connection status and live player list updates via Socket.IO `state_update`
 
+### Stage auto-advance timers (backend-driven)
+
+The backend auto-advances the game at each stage based on environment-configurable durations. Set these in your PowerShell session before `flask run`:
+
+```powershell
+venv\Scripts\activate; $env:ROUND_INTRO_DURATION_SEC="5"; $env:GUESS_DURATION_SEC="20"; $env:SCOREBOARD_DURATION_SEC="6"; flask run
+```
+
+Clients display a visible countdown for the current stage and update automatically on stage changes.
+
 ## Render Deployment (Backend)
 
 - Set environment variables: `DATABASE_URL`, `SECRET_KEY`.

@@ -19,7 +19,8 @@ Current status:
 - HTTP endpoints verified by tests.
 - Socket tests pass using test-only mirror; browser/Electron manual checks next.
 - Electron main compiles from TypeScript (tsc → dist-main) and loads renderer (Vite at 5174) on Windows.
-- Game stage pipeline implemented and tested: `status` (lobby → in_progress → finished) with per-round `stage` (round_intro ↔ scoreboard, then finished).
+- Game stage pipeline implemented and tested: `status` (lobby → in_progress → finished) with per-round `stage` (round_intro → guessing → scoreboard, then finished).
+- Centralized stage timers implemented (intro/guessing/scoreboard) using a scheduler keyed by `(game_id, stage, current_round)`; env-configurable durations; visible countdowns on web/Electron.
 
 ### Host-Owned Session Model (Authoritative Electron)
 
@@ -124,6 +125,7 @@ Updated/added (this iteration):
 - Backend rounds and stages implemented: `total_rounds`, `current_round`, `play_order` initialized on Start; `/advance` endpoint cycles `round_intro ↔ scoreboard` per round and finalizes with `finished`. [Implemented]
 - Controller-only Start and Next flows validated in UI. [Implemented]
 - Session owner disconnect: production keeps ~2s grace; tests end immediately for determinism. [Implemented]
+- Auto-advance timers for stages with centralized scheduler; countdowns shown in clients. [Implemented]
 
 TODOs:
 
@@ -143,6 +145,14 @@ Each item above must be covered by tests and/or manual verification steps listed
 - Live refresh on `state_update` from `/ws`
 - Controller-only "Start Game" once all ready [Implemented]
 - Stage badges, round counter, and controller-only Next [Implemented]
+- Visible countdown timers per stage [Implemented]
+
+### Near-term tasks
+
+- Refactor web/Electron to stage-specific components loaded from global state (Zustand), fully unmount previous stage views.
+- Persist per-round results list; show a final recap screen at Finished.
+- Add backend logging toggle and heartbeat guard to detect/tolerate stalls (optional).
+- Expand tests to cover timer-driven auto-advance with mocked durations.
 
 2. Developer experience
 

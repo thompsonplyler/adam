@@ -32,6 +32,7 @@ export type GameState = {
     play_order?: number[] | null;
     current_story?: { id: number; content: string; author_id: number } | null;
     current_story_guess_count?: number;
+    durations?: { round_intro?: number; guessing?: number; scoreboard?: number };
 };
 
 export async function createGame(): Promise<{ game_code: string }> {

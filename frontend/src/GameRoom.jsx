@@ -81,6 +81,8 @@ export function GameRoom() {
     const { gameCode } = useParams();
     const navigate = useNavigate();
     const [game, setGame] = useState(null);
+    const [deadline, setDeadline] = useState(null);
+    const [nowTs, setNowTs] = useState(Date.now());
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const socketRef = useRef(null);
@@ -117,6 +119,10 @@ export function GameRoom() {
             try {
                 const updated = await api.getGameState(gameCode);
                 setGame(updated);
+                // reset countdown on stage change
+                try {
+                    setDeadline(Date.now() + ((updated?.durations?.[updated?.stage] || 0) * 1000));
+                } catch { }
             } catch (e) {
                 console.error('Failed to refresh state after socket update', e);
             }
@@ -140,6 +146,12 @@ export function GameRoom() {
             }
         };
     }, [gameCode, navigate]);
+
+    // Tick timer to refresh countdown every 500ms
+    useEffect(() => {
+        const id = setInterval(() => setNowTs(Date.now()), 500);
+        return () => clearInterval(id);
+    }, []);
 
     const handleJoinGame = async (playerName) => {
         setLoading(true);
@@ -191,6 +203,8 @@ export function GameRoom() {
     const isController = currentPlayer && controllerId === currentPlayer.id;
     const allReady = game.players.length > 0 && game.players.every(p => p.has_submitted_story);
     const isInProgress = game.status === 'in_progress';
+    const remainingMs = deadline ? Math.max(0, deadline - nowTs) : 0;
+    const remainingSec = Math.ceil(remainingMs / 1000);
     const isFinished = game.status === 'finished';
 
     return (
@@ -245,6 +259,9 @@ export function GameRoom() {
                             <Text c="dimmed" mt="xs">
                                 {game.stage === 'scoreboard' ? 'Reviewing scores...' : (game.stage === 'guessing' ? 'Make your guess!' : 'Get ready for the next round.')}
                             </Text>
+                            {game.stage !== 'finished' && game.status === 'in_progress' && (
+                                <Text c="dimmed" size="sm" mt="xs">Auto-advances in {remainingSec}s</Text>
+                            )}
                             {game.current_story && (
                                 <Paper withBorder shadow="xs" p="md" mt="md">
                                     <Title order={5}>Current Story</Title>

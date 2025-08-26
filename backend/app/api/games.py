@@ -211,7 +211,19 @@ def submit_story(game_code):
 @games.route('/<string:game_code>/state', methods=['GET'])
 def get_game_state(game_code):
     game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
-    return jsonify(game.to_dict())
+    # Include stage durations so clients can show countdowns
+    try:
+        cfg = current_app.config
+        durations = {
+            'round_intro': int(cfg.get('ROUND_INTRO_DURATION_SEC', 5)),
+            'guessing': int(cfg.get('GUESS_DURATION_SEC', 20)),
+            'scoreboard': int(cfg.get('SCOREBOARD_DURATION_SEC', 6)),
+        }
+    except Exception:
+        durations = {'round_intro': 5, 'guessing': 20, 'scoreboard': 6}
+    payload = game.to_dict()
+    payload['durations'] = durations
+    return jsonify(payload)
 
 
 @games.route('/<string:game_code>/start', methods=['POST'])

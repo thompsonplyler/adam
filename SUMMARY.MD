@@ -21,12 +21,13 @@ This document outlines the development process, key architectural decisions, and
   - Socket.IO and CORS must allow both `http://localhost:5173` (web) and `http://localhost:5174` (Electron renderer) or Electron will show disconnected and the Network tab will show repeated 400s.
   - Do not tie game persistence to the session-owner socket’s instantaneous presence. The Electron renderer can briefly disconnect in dev (HMR), causing accidental teardown and 404 on `/api/games/:code/state`. We now end sessions only on explicit quit, or after a short grace period (~2s) if the session owner does not reconnect.
 
-**Core Gameplay Loop & State Synchronization (Recent)**
+**Core Gameplay Loop, Timers & State Synchronization (Recent)**
 
 - Backend now models: `Game.status` ("lobby" | "in_progress" | "finished") and `Game.stage` ("round_intro" | "scoreboard"; terminal "finished").
 - On Start (controller-only), backend sets: `status='in_progress'`, `stage='round_intro'`, `current_round=1`, `total_rounds=players.length`, and `play_order` by join order.
-- Advance endpoint (controller-only) transitions: `round_intro → scoreboard → round_intro(next) → finished`, emitting `state_update` each step.
+- Advance endpoint (controller-only) transitions: `round_intro → guessing → scoreboard → round_intro(next) → finished`, emitting `state_update` each step.
 - Web client shows status badge, stage badge, "Round X of N", and a controller-only Next button wired to `/advance`.
+- Auto-advance timers: centralized scheduler runs on every stage change with durations from env (`ROUND_INTRO_DURATION_SEC`, `GUESS_DURATION_SEC`, `SCOREBOARD_DURATION_SEC`), keyed by `(game_id, stage, current_round)` to avoid collisions. Visible countdowns in both clients.
 
 **Session Owner Lifecycle (Electron is session owner)**
 
@@ -36,8 +37,14 @@ This document outlines the development process, key architectural decisions, and
 **Tests**
 
 - All backend tests green. Added validations for: Start initializing rounds/stage; Advance stage pipeline; session_ended emission behavior.
+  - Added guessing/scoring flow test; extended pipeline test to reflect guessing stage.
 
 **Phase 5: Core Gameplay Loop & State Synchronization**
+
+- **Centralized Timers & A Nasty Edge Case:**
+
+  - **Problem:** The game intermittently stalled at the second round_intro. Per-path timers and an overly broad de-duplication key prevented scheduling.
+  - **Fix:** Introduced a single scheduler that registers timers by `(game_id, stage, current_round)`, invoked after every stage change; removed scattered timers. Also fixed a missing argument bug in the background task call that blocked the second-round intro from firing.
 
 This phase involved implementing the actual gameplay, which uncovered and required fixing several critical bugs related to state management between the server and the clients.
 
