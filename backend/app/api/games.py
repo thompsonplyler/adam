@@ -113,7 +113,9 @@ def start_game(game_code):
     # Compute rounds on start
     game.status = 'in_progress'
     game.stage = 'round_intro'
-    order = sorted([p.id for p in players])
+    import random
+    order = [p.id for p in players]
+    random.shuffle(order)
     game.play_order = json.dumps(order)
     game.total_rounds = len(order)
     game.current_round = 1

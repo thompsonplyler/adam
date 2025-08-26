@@ -285,6 +285,20 @@ export function GameRoom() {
                                     )}
                                 </Paper>
                             )}
+                            {game.stage === 'scoreboard' && (
+                                <Paper withBorder shadow="xs" p="md" mt="md">
+                                    <Title order={5}>Round results</Title>
+                                    <Text c="dimmed" size="sm">Scores updated. Totals shown below.</Text>
+                                    <Stack mt="xs">
+                                        {game.players.sort((a, b) => b.score - a.score).map(p => (
+                                            <Group key={p.id} position="apart">
+                                                <Text>{p.name}</Text>
+                                                <Badge>{p.score}</Badge>
+                                            </Group>
+                                        ))}
+                                    </Stack>
+                                </Paper>
+                            )}
                             {isController && (
                                 <Button mt="md" onClick={async () => {
                                     try {
