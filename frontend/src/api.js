@@ -60,3 +60,17 @@ export const submitStory = (game_code, player_id, story) => {
         body: JSON.stringify({ player_id, story }),
     });
 };
+
+export const startGame = (game_code, controller_id) => {
+    return request(`/api/games/${game_code}/start`, {
+        method: 'POST',
+        body: JSON.stringify({ controller_id }),
+    });
+};
+
+export const advanceRound = (game_code, controller_id) => {
+    return request(`/api/games/${game_code}/advance`, {
+        method: 'POST',
+        body: JSON.stringify({ controller_id }),
+    });
+};

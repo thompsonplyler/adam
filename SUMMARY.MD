@@ -19,6 +19,23 @@ This document outlines the development process, key architectural decisions, and
   - For Socket.IO testing, mirroring handlers on `/` during TESTING unblocks harness limitations; production clients use `/ws`.
   - Vite renderer needs an explicit `root` and `--host` when served from a subdirectory. Without it, Electron can load 404 at `/` even though Vite says it’s “ready”. Setting the renderer’s vite config `root` to the renderer folder and binding `--host` resolved the blank window.
   - Socket.IO and CORS must allow both `http://localhost:5173` (web) and `http://localhost:5174` (Electron renderer) or Electron will show disconnected and the Network tab will show repeated 400s.
+  - Do not tie game persistence to the session-owner socket’s instantaneous presence. The Electron renderer can briefly disconnect in dev (HMR), causing accidental teardown and 404 on `/api/games/:code/state`. We now end sessions only on explicit quit, or after a short grace period (~2s) if the session owner does not reconnect.
+
+**Core Gameplay Loop & State Synchronization (Recent)**
+
+- Backend now models: `Game.status` ("lobby" | "in_progress" | "finished") and `Game.stage` ("round_intro" | "scoreboard"; terminal "finished").
+- On Start (controller-only), backend sets: `status='in_progress'`, `stage='round_intro'`, `current_round=1`, `total_rounds=players.length`, and `play_order` by join order.
+- Advance endpoint (controller-only) transitions: `round_intro → scoreboard → round_intro(next) → finished`, emitting `state_update` each step.
+- Web client shows status badge, stage badge, "Round X of N", and a controller-only Next button wired to `/advance`.
+
+**Session Owner Lifecycle (Electron is session owner)**
+
+- Electron-created game; web clients only join existing games by code.
+- On Electron quit/disconnect: production uses ~2s grace before ending; tests end immediately for determinism. `session_ended` is emitted to room `game:{CODE}` and the backend cleans up related rows (`Player`, `Story`, `Guess`) safely by first clearing `game.current_story_id`.
+
+**Tests**
+
+- All backend tests green. Added validations for: Start initializing rounds/stage; Advance stage pipeline; session_ended emission behavior.
 
 **Phase 5: Core Gameplay Loop & State Synchronization**
 

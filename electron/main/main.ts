@@ -45,4 +45,21 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
+// Best-effort signal to end session when the app quits
+app.on('before-quit', () => {
+    try {
+        // Inject a small script into the renderer to emit leave if we have a code
+        if (mainWindow) {
+            mainWindow.webContents.executeJavaScript(`
+                try {
+                  const code = localStorage.getItem('game_code');
+                  if (code && window.__hostSocket) {
+                    window.__hostSocket.emit('leave_game', { game_code: code });
+                  }
+                } catch {}
+            `);
+        }
+    } catch { }
+});
+
 

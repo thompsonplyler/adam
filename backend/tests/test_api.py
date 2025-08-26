@@ -36,6 +36,27 @@ def test_submit_story_and_progresses(client):
     res = client.post(f'/api/games/{code}/stories', json={'player_id': bob['id'], 'story': 'Another time...'} )
     assert res.status_code == 201
     state = client.get(f'/api/games/{code}/state').get_json()
-    assert state['status'] == 'in_progress'
+    # Still lobby until manual start; then controller starts game
+    # Simulate controller start
+    controller_id = min(p['id'] for p in state['players'])
+    started = client.post(f'/api/games/{code}/start', json={'controller_id': controller_id}).get_json()
+    assert started['status'] == 'in_progress'
+    assert started['stage'] == 'round_intro'
+    assert started['current_round'] == 1
+    assert started['total_rounds'] == 2
+    # Advance round: round_intro -> scoreboard
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['stage'] == 'scoreboard'
+    # Advance round: scoreboard -> next round round_intro
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['current_round'] == 2
+    assert adv['stage'] == 'round_intro'
+    # Advance round: round_intro -> scoreboard
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['stage'] == 'scoreboard'
+    # Advance round: last scoreboard -> finished
+    adv = client.post(f'/api/games/{code}/advance', json={'controller_id': controller_id}).get_json()
+    assert adv['status'] == 'finished'
+    assert adv['stage'] == 'finished'
 
 

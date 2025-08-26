@@ -16,15 +16,23 @@ export function App() {
         const baseUrl = (import.meta as any).env.VITE_API_URL || (globalThis as any).process?.env?.API_URL || 'http://localhost:5000';
         const s = io(baseUrl + '/ws');
         setSocket(s);
+        ; (window as any).__hostSocket = s;
         s.on('connect', () => {
             setConnected(true);
-            if (gameCode) s.emit('join_game', { game_code: gameCode });
+            if (gameCode) s.emit('join_game', { game_code: gameCode, is_session_owner: true });
         });
         s.on('joined', (m: any) => setRoom(m?.room ?? ''));
         s.on('state_update', async () => {
             if (gameCode) {
                 try { setState(await getGameState(gameCode)); } catch { /* ignore */ }
             }
+        });
+        s.on('session_ended', () => {
+            // If we receive this as host, reset UI to Start Game
+            localStorage.removeItem('game_code');
+            setGameCode('');
+            setState(null);
+            setRoom('');
         });
         return () => { s.disconnect(); };
     }, [gameCode]);
@@ -40,12 +48,22 @@ export function App() {
         try {
             const res = await createGame();
             setGameCode(res.game_code);
-            if (socket) socket.emit('join_game', { game_code: res.game_code });
+            if (socket) socket.emit('join_game', { game_code: res.game_code, is_session_owner: true });
         } catch (e: any) {
             setApiError(e?.message || 'Failed to create game');
         } finally {
             setCreating(false);
         }
+    };
+
+    const handleQuit = () => {
+        try {
+            if (socket && gameCode) socket.emit('leave_game', { game_code: gameCode });
+        } catch { }
+        localStorage.removeItem('game_code');
+        setGameCode('');
+        setState(null);
+        setRoom('');
     };
 
     return (
@@ -68,6 +86,7 @@ export function App() {
                                         </Tooltip>
                                     )}
                                 </CopyButton>
+                                <Button variant="light" color="red" onClick={handleQuit}>Quit Lobby</Button>
                             </Group>
                         )}
                     </Group>

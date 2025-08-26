@@ -19,6 +19,22 @@ Current status:
 - HTTP endpoints verified by tests.
 - Socket tests pass using test-only mirror; browser/Electron manual checks next.
 - Electron main compiles from TypeScript (tsc → dist-main) and loads renderer (Vite at 5174) on Windows.
+- Game stage pipeline implemented and tested: `status` (lobby → in_progress → finished) with per-round `stage` (round_intro ↔ scoreboard, then finished).
+
+### Host-Owned Session Model (Authoritative Electron)
+
+- Electron is the host and single source of truth for an active game session.
+- Only Electron can create a game and generate a join code. Web clients never create games.
+- If Electron disconnects (host stops), the session is terminated and all web clients must be booted with a clear "Session ended" state.
+- The first web client to join a lobby becomes the controller and can start the game once all players have readied.
+
+Must-pass gates for this model:
+
+- Host heartbeat/room presence is detected; if absent beyond a short grace period, session is ended and DB is cleaned.
+- Web clients joining a non-existent or ended session receive a clear error and return to the code entry screen.
+- Web default landing is "Enter code"; Electron default is "Start Game".
+
+---
 
 ## Phase 1: Game Settings (The Foundation)
 
@@ -102,7 +118,12 @@ These items from Adam's vision can be implemented after the core gameplay is rob
 - Reorganize backend routes using Blueprints under `app/api/` and document as routing principle. [Implemented]
 - Add minimal Electron client for connectivity tests (connect, join room, log events). [Planned]
 - Add backend pytest for HTTP endpoints and a socket echo/room test. [Planned]
-- Add frontend tests for GameRoom render and socket hook behavior (mocked). [Planned]
+
+Updated/added (this iteration):
+
+- Backend rounds and stages implemented: `total_rounds`, `current_round`, `play_order` initialized on Start; `/advance` endpoint cycles `round_intro ↔ scoreboard` per round and finalizes with `finished`. [Implemented]
+- Controller-only Start and Next flows validated in UI. [Implemented]
+- Session owner disconnect: production keeps ~2s grace; tests end immediately for determinism. [Implemented]
 
 TODOs:
 
@@ -120,6 +141,8 @@ Each item above must be covered by tests and/or manual verification steps listed
 - Connection status badge; room indicator
 - Players list (GET `/api/games/:code/state`) with submission status
 - Live refresh on `state_update` from `/ws`
+- Controller-only "Start Game" once all ready [Implemented]
+- Stage badges, round counter, and controller-only Next [Implemented]
 
 2. Developer experience
 
@@ -130,3 +153,9 @@ Each item above must be covered by tests and/or manual verification steps listed
 
 - Unit tests for socket client and simple rendering
 - Keep backend tests green; no change to HTTP/socket contracts
+
+### Incremental Changes (next iteration)
+
+- Backend: introduce host lifecycle signals (heartbeat or presence-based) and a `session_ended` event; delete/cleanup game on host end. [Partially Implemented]
+- Frontend (web): make the default screen an "Enter code" join view; designate first joiner as controller; add readiness gating. [Implemented]
+- Electron: ensure UI never exposes "Join"; keep only "Start Game" and lobby/display. [In Progress]

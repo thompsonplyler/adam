@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app import db, socketio
 from app.models import Game, Player, Story
+import json
 
 
 games = Blueprint('games', __name__)
@@ -70,17 +71,6 @@ def submit_story(game_code):
 
     db.session.commit()
 
-    # Check if all players have submitted their stories to start the game
-    total_players = Player.query.filter_by(game_id=game.id).count()
-    if total_players < 2:
-        return jsonify({'message': 'Story submitted. Waiting for more players.'}), 201
-
-    submitted_stories = Story.query.filter_by(game_id=game.id).count()
-
-    if total_players == submitted_stories:
-        game.status = 'in_progress'
-        db.session.commit()
-
     # Emit live update to all clients in the game room
     socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
 
@@ -93,3 +83,83 @@ def get_game_state(game_code):
     return jsonify(game.to_dict())
 
 
+@games.route('/<string:game_code>/start', methods=['POST'])
+def start_game(game_code):
+    data = request.get_json() or {}
+    controller_id = data.get('controller_id')
+
+    game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
+    if game.status == 'in_progress':
+        # Idempotent start: already started
+        return jsonify(game.to_dict())
+    if game.status != 'lobby':
+        return jsonify({'error': 'Game is not in lobby'}), 400
+
+    players = Player.query.filter_by(game_id=game.id).all()
+    if not players:
+        return jsonify({'error': 'No players in game'}), 400
+
+    expected_controller = min(p.id for p in players)
+    if controller_id != expected_controller:
+        return jsonify({'error': 'Only the first player to join may start the game'}), 403
+
+    if any(not p.has_submitted_story for p in players):
+        return jsonify({'error': 'All players must submit a story before starting'}), 400
+
+    # Compute rounds on start
+    game.status = 'in_progress'
+    game.stage = 'round_intro'
+    order = sorted([p.id for p in players])
+    game.play_order = json.dumps(order)
+    game.total_rounds = len(order)
+    game.current_round = 1
+    db.session.add(game)
+    db.session.commit()
+
+    socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+    return jsonify(game.to_dict())
+
+
+@games.route('/<string:game_code>/advance', methods=['POST'])
+def advance_round(game_code):
+    data = request.get_json() or {}
+    controller_id = data.get('controller_id')
+
+    game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
+    if game.status == 'finished':
+        return jsonify(game.to_dict())
+    if game.status != 'in_progress':
+        return jsonify({'error': 'Game is not in progress'}), 400
+
+    players = Player.query.filter_by(game_id=game.id).all()
+    if not players:
+        return jsonify({'error': 'No players in game'}), 400
+    expected_controller = min(p.id for p in players)
+    if controller_id != expected_controller:
+        return jsonify({'error': 'Only the controller may advance'}), 403
+
+    # Stage pipeline
+    if game.stage == 'round_intro':
+        game.stage = 'scoreboard'
+        db.session.add(game)
+        db.session.commit()
+        socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+        return jsonify(game.to_dict())
+
+    # scoreboard -> next round or finished
+    if game.current_round is None or game.total_rounds is None:
+        return jsonify({'error': 'Rounds not initialized'}), 400
+    if game.current_round < game.total_rounds:
+        game.current_round += 1
+        game.stage = 'round_intro'
+        db.session.add(game)
+        db.session.commit()
+        socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+        return jsonify(game.to_dict())
+
+    game.status = 'finished'
+    game.stage = 'finished'
+    db.session.add(game)
+    db.session.commit()
+    socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+    return jsonify(game.to_dict())

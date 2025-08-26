@@ -1,30 +1,38 @@
-import React from 'react';
-import { Button, Container, Title, Stack } from '@mantine/core';
+import React, { useState } from 'react';
+import { Button, Container, Title, Stack, TextInput, Group } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import { createGame } from './api';
 
 function HomePage() {
     const navigate = useNavigate();
+    const [code, setCode] = useState('');
 
-    const handleCreateGame = async () => {
-        try {
-            const newGame = await createGame();
-            if (newGame && newGame.game_code) {
-                navigate(`/game/${newGame.game_code}`);
-            }
-        } catch (error) {
-            console.error("Failed to create game:", error);
-            // We can add user-facing error handling here later
+    const handleJoin = (e) => {
+        e?.preventDefault?.();
+        const trimmed = (code || '').toString().trim().toUpperCase();
+        if (trimmed.length >= 4) {
+            navigate(`/game/${trimmed}`);
         }
     };
 
     return (
         <Container size="xs" style={{ paddingTop: '50px' }}>
-            <Stack align="center">
+            <Stack align="center" gap="md">
                 <Title order={1}>It Wasn't Me</Title>
-                <Button onClick={handleCreateGame} size="lg">
-                    Create Game
-                </Button>
+                <form onSubmit={handleJoin} style={{ width: '100%' }}>
+                    <Stack>
+                        <TextInput
+                            label="Enter game code"
+                            placeholder="ABCD"
+                            value={code}
+                            onChange={(e) => setCode(e.currentTarget.value)}
+                        />
+                        <Group justify="center">
+                            <Button type="submit" size="md">
+                                Join Game
+                            </Button>
+                        </Group>
+                    </Stack>
+                </form>
             </Stack>
         </Container>
     );

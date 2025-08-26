@@ -1,6 +1,6 @@
 # It Wasn't Me – Developer Setup
 
-This repo contains a Flask backend and a React (Vite + Mantine) frontend. A minimal Electron client is provided to validate websocket connectivity and room-based updates. The backend is designed to be deployed to Render with PostgreSQL.
+This repo contains a Flask backend, a React (Vite + Mantine) web client, and a TypeScript Electron display client. The backend is the single source of truth; Electron starts/ends sessions; web clients join with a 4‑letter code.
 
 ## Prerequisites
 
@@ -49,9 +49,9 @@ cd backend; venv\Scripts\activate; python -c "from app import create_app, db; a=
 ### Manual real-time verification
 
 1. Start backend and frontend as above.
-2. In the web app, click Create Game and copy the game code.
-3. Open two browser tabs to `/game/CODE`, join with two different names.
-4. Submit a story in one tab. The other tab should update nearly instantly (socket `state_update`).
+2. Start Electron (see below), click "Start Game" to create a code.
+3. In the web app, enter the code on the home screen to join from each player.
+4. Each player submits a story; the first player to join sees "Start Game" once all are ready. Starting the game flips everyone to "In Progress".
 
 ## Frontend (React + Vite)
 
@@ -79,7 +79,7 @@ cd backend; venv\Scripts\activate; python -c "from app import create_app, db; a=
 
 ## Electron app (TypeScript)
 
-Separate Electron client with shared Mantine theme.
+Separate Electron client with shared Mantine theme. Electron is the session owner (lifecycle) but not a gameplay user.
 
 Dev (Windows):
 
@@ -96,6 +96,13 @@ Dev (Windows):
    cd electron; npm run dev:main
    ```
    You should see an Electron window that loads `http://localhost:5174`.
+
+Usage (local):
+
+- Click "Start Game" to create a lobby and code
+- Share the code; web clients join at `/game/CODE`
+- When all players are ready (stories submitted), the first joiner (controller) clicks "Start Game"
+- Quit Lobby in Electron ends the session and boots players back to the code entry screen (closing the window also ends the session after a brief grace period)
 
 Troubleshooting (Windows):
 
@@ -117,7 +124,7 @@ Current capabilities
 
 ## Tests
 
-- Backend: pytest planned for HTTP endpoints and basic socket events.
-- Frontend: tests planned for `GameRoom` and socket client behavior.
+- Backend: pytest covers HTTP flows, socket basics, and session owner lifecycle.
+- Frontend: smoke tests planned for `GameRoom` and socket behavior.
 
 Refer to `GAME-PLAN.MD` for test gates that must pass before feature development proceeds.

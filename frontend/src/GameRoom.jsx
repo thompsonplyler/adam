@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Container, Title, Text, TextInput, Paper, SimpleGrid, Loader, Group, Stack, Textarea } from '@mantine/core';
+import { Button, Container, Title, Text, TextInput, Paper, SimpleGrid, Loader, Group, Stack, Textarea, Badge } from '@mantine/core';
 import * as api from './api';
 import { io } from 'socket.io-client';
 
@@ -121,6 +121,12 @@ export function GameRoom() {
                 console.error('Failed to refresh state after socket update', e);
             }
         });
+        socket.on('session_ended', () => {
+            setError('Session ended');
+            // Clear any stored player id for this code
+            try { sessionStorage.removeItem(`player_id_${gameCode}`); } catch { }
+            navigate('/');
+        });
         socket.on('connected', () => { });
         socket.on('joined', () => { });
         socket.on('error', (payload) => { console.warn('Socket error', payload); });
@@ -181,11 +187,25 @@ export function GameRoom() {
     }
 
     const currentPlayer = game.players.find(p => p.id === playerId);
+    const controllerId = game.players.length ? Math.min(...game.players.map(p => p.id)) : null;
+    const isController = currentPlayer && controllerId === currentPlayer.id;
+    const allReady = game.players.length > 0 && game.players.every(p => p.has_submitted_story);
+    const isInProgress = game.status === 'in_progress';
+    const isFinished = game.status === 'finished';
 
     return (
         <Container>
             <Title order={1} align="center" mt="md">Game Code: {game.game_code}</Title>
-            <Text c="dimmed" size="sm" align="center">Share this code with your friends!</Text>
+            <Group position="center" mt="xs">
+                {currentPlayer && <Badge color={isController ? 'green' : 'gray'}>{isController ? 'Controller' : 'Player'}</Badge>}
+                <Badge color={isFinished ? 'red' : (isInProgress ? 'blue' : 'yellow')}>
+                    {isFinished ? 'Finished' : (isInProgress ? 'In Progress' : 'Lobby')}
+                </Badge>
+                {isInProgress && (
+                    <Badge color="grape">{game.stage === 'scoreboard' ? 'Scoreboard' : 'Round intro'}</Badge>
+                )}
+                {!isInProgress && <Text c="dimmed" size="sm">{allReady ? 'Everyone is ready' : 'Waiting for all players to be ready'}</Text>}
+            </Group>
 
             <SimpleGrid cols={2} spacing="lg" mt="lg">
                 <Paper withBorder shadow="md" p="lg">
@@ -203,8 +223,50 @@ export function GameRoom() {
                 </Paper>
 
                 <div>
-                    {!currentPlayer && <JoinGameForm onJoin={handleJoinGame} loading={loading} />}
-                    {currentPlayer && <PlayerLobby player={currentPlayer} onStorySubmit={handleStorySubmit} loading={loading} />}
+                    {!isInProgress && !currentPlayer && <JoinGameForm onJoin={handleJoinGame} loading={loading} />}
+                    {!isInProgress && currentPlayer && <PlayerLobby player={currentPlayer} onStorySubmit={handleStorySubmit} loading={loading} />}
+                    {!isInProgress && currentPlayer && isController && allReady && (
+                        <Button mt="md" onClick={async () => {
+                            try {
+                                await api.startGame(gameCode, currentPlayer.id);
+                                const updated = await api.getGameState(gameCode);
+                                setGame(updated);
+                            } catch (e) {
+                                setError(e.message || 'Could not start game');
+                            }
+                        }}>Start Game</Button>
+                    )}
+                    {isInProgress && (
+                        <Paper withBorder shadow="md" p="lg" mt="lg">
+                            <Group position="apart">
+                                <Title order={3}>Round {game.current_round} of {game.total_rounds}</Title>
+                                <Badge>{game.stage === 'scoreboard' ? 'Scoreboard' : 'Round intro'}</Badge>
+                            </Group>
+                            <Text c="dimmed" mt="xs">
+                                {game.stage === 'scoreboard' ? 'Reviewing scores...' : 'Get ready for the next round.'}
+                            </Text>
+                            {isController && (
+                                <Button mt="md" onClick={async () => {
+                                    try {
+                                        await api.advanceRound(gameCode, currentPlayer.id);
+                                        const updated = await api.getGameState(gameCode);
+                                        setGame(updated);
+                                    } catch (e) {
+                                        setError(e.message || 'Could not advance');
+                                    }
+                                }}>Next</Button>
+                            )}
+                        </Paper>
+                    )}
+                    {isFinished && (
+                        <Paper withBorder shadow="md" p="lg" mt="lg">
+                            <Title order={3}>Game finished</Title>
+                            <Text c="dimmed">Thanks for playing!</Text>
+                            <Group mt="md">
+                                <Button variant="outline" onClick={() => navigate('/')}>Return to Main Menu</Button>
+                            </Group>
+                        </Paper>
+                    )}
                 </div>
 
             </SimpleGrid>

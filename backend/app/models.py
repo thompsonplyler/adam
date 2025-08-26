@@ -1,6 +1,7 @@
 from app import db
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+import json
 import string
 import random
 
@@ -53,9 +54,14 @@ class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     game_code = db.Column(db.String(4), unique=True, index=True)
     status = db.Column(db.String(64), default='lobby') # lobby, in_progress, finished
+    stage = db.Column(db.String(64), nullable=True) # round_intro, scoreboard, finished (when status is finished)
     players = db.relationship('Player', back_populates='game')
     stories = db.relationship('Story', foreign_keys='Story.game_id', backref='game', lazy='dynamic')
     current_story_id = db.Column(db.Integer, db.ForeignKey('story.id', name='fk_game_current_story_id', use_alter=True), nullable=True)
+    # Round scaffolding
+    current_round = db.Column(db.Integer, nullable=True)
+    total_rounds = db.Column(db.Integer, nullable=True)
+    play_order = db.Column(db.Text, nullable=True)  # JSON-encoded list of player ids
     
     @property
     def current_story(self):
@@ -73,8 +79,12 @@ class Game(db.Model):
             'id': self.id,
             'game_code': self.game_code,
             'status': self.status,
+            'stage': self.stage,
             'players': [p.to_dict() for p in self.players],
             'current_story': self.current_story.to_dict() if self.current_story else None,
+            'current_round': self.current_round,
+            'total_rounds': self.total_rounds,
+            'play_order': json.loads(self.play_order) if self.play_order else None,
         }
 
 class Story(db.Model):
