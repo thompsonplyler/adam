@@ -21,7 +21,18 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export type Player = { id: number; name: string; has_submitted_story: boolean };
-export type GameState = { game_code: string; status: string; players: Player[] };
+export type GameState = {
+    id: number;
+    game_code: string;
+    status: 'lobby' | 'in_progress' | 'finished';
+    stage?: 'round_intro' | 'scoreboard' | 'finished';
+    players: Player[];
+    current_round?: number | null;
+    total_rounds?: number | null;
+    play_order?: number[] | null;
+    current_story?: { id: number; content: string; author_id: number } | null;
+    current_story_guess_count?: number;
+};
 
 export async function createGame(): Promise<{ game_code: string }> {
     return request('/api/games/create', { method: 'POST' });

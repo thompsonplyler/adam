@@ -66,6 +66,9 @@ export function App() {
         setRoom('');
     };
 
+    const isInProgress = state?.status === 'in_progress';
+    const isFinished = state?.status === 'finished';
+
     return (
         <Container>
             <Group justify="space-between" mt="md">
@@ -97,7 +100,17 @@ export function App() {
                 <Paper withBorder p="md" mt="md">
                     <Group justify="space-between">
                         <Title order={4}>Players ({state?.players.length ?? 0})</Title>
-                        <Text c="dimmed">Room: {room || '(joining...)'}</Text>
+                        <Group>
+                            {state && (
+                                <Badge color={isFinished ? 'red' : (isInProgress ? 'blue' : 'yellow')}>
+                                    {isFinished ? 'Finished' : (isInProgress ? 'In Progress' : 'Lobby')}
+                                </Badge>
+                            )}
+                            {isInProgress && (
+                                <Badge color="grape">{state?.stage === 'scoreboard' ? 'Scoreboard' : (state?.stage === 'guessing' ? 'Guessing' : 'Round intro')}</Badge>
+                            )}
+                            <Text c="dimmed">Room: {room || '(joining...)'}</Text>
+                        </Group>
                     </Group>
                     <Divider my="sm" />
                     {state?.players?.length ? (
@@ -109,6 +122,32 @@ export function App() {
                     ) : (
                         <Text c="dimmed">Waiting for players...</Text>
                     )}
+                </Paper>
+            )}
+            {isInProgress && (
+                <Paper withBorder p="md" mt="md">
+                    <Group justify="space-between">
+                        <Title order={4}>Round {state?.current_round} of {state?.total_rounds}</Title>
+                        <Badge>{state?.stage === 'scoreboard' ? 'Scoreboard' : (state?.stage === 'guessing' ? 'Guessing' : 'Round intro')}</Badge>
+                    </Group>
+                    <Text c="dimmed" mt="xs">
+                        {state?.stage === 'scoreboard' ? 'Reviewing scores...' : (state?.stage === 'guessing' ? 'Players are guessing…' : 'Get ready for the next round.')}
+                    </Text>
+                    {state?.current_story && (
+                        <Paper withBorder p="md" mt="md">
+                            <Title order={5}>Current Story</Title>
+                            <Text mt="xs">{state.current_story.content}</Text>
+                            {state?.stage === 'guessing' && (
+                                <Text c="dimmed" mt="sm">Guesses: {state?.current_story_guess_count ?? 0} / {(state?.players?.length ?? 1) - 1}</Text>
+                            )}
+                        </Paper>
+                    )}
+                </Paper>
+            )}
+            {isFinished && (
+                <Paper withBorder p="md" mt="md">
+                    <Title order={3}>Game finished</Title>
+                    <Text c="dimmed">Thanks for playing!</Text>
                 </Paper>
             )}
         </Container>
