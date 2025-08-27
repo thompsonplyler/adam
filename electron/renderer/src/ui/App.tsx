@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Container, Title, Text, Group, Badge, Button, Stack, Paper, Divider, CopyButton, Tooltip, ActionIcon, List } from '@mantine/core';
 import { io, Socket } from 'socket.io-client';
 import { createGame, getGameState, type GameState } from '../lib/api';
+import RoundIntro from './stages/RoundIntro';
+import Guessing from './stages/Guessing';
+import Scoreboard from './stages/Scoreboard';
 
 export function App() {
     const [socket, setSocket] = useState<Socket | null>(null);
@@ -29,7 +32,13 @@ export function App() {
                 try {
                     const st = await getGameState(gameCode);
                     setState(st);
-                    try { setDeadline(Date.now() + ((st?.durations?.[st?.stage as any] || 0) * 1000)); } catch { }
+                    try {
+                        if ((st as any)?.stage_deadline) {
+                            setDeadline(Math.floor((st as any).stage_deadline * 1000));
+                        } else {
+                            setDeadline(Date.now() + ((st?.durations?.[st?.stage as any] || 0) * 1000));
+                        }
+                    } catch { }
                 } catch { /* ignore */ }
             }
         });
@@ -154,21 +163,16 @@ export function App() {
                         <Paper withBorder p="md" mt="md">
                             <Title order={5}>Current Story</Title>
                             <Text mt="xs">{state.current_story.content}</Text>
-                            {state?.stage === 'guessing' && (
-                                <Text c="dimmed" mt="sm">Guesses: {state?.current_story_guess_count ?? 0} / {(state?.players?.length ?? 1) - 1}</Text>
-                            )}
                         </Paper>
                     )}
+                    {state?.stage === 'round_intro' && (
+                        <RoundIntro state={state} />
+                    )}
+                    {state?.stage === 'guessing' && (
+                        <Guessing state={state} />
+                    )}
                     {state?.stage === 'scoreboard' && (
-                        <Paper withBorder p="md" mt="md">
-                            <Title order={5}>Round results</Title>
-                            <Text c="dimmed" size="sm">Scores updated. Totals shown below.</Text>
-                            <List mt="xs">
-                                {state?.players?.slice().sort((a: any, b: any) => (b.score || 0) - (a.score || 0)).map((p: any) => (
-                                    <List.Item key={p.id}>{p.name}: {p.score ?? 0}</List.Item>
-                                ))}
-                            </List>
-                        </Paper>
+                        <Scoreboard state={state} />
                     )}
                 </Paper>
             )}

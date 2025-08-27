@@ -1,80 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Button, Container, Title, Text, TextInput, Paper, SimpleGrid, Loader, Group, Stack, Textarea, Badge } from '@mantine/core';
+import { Button, Container, Title, Text, Paper, SimpleGrid, Loader, Group, Stack, Badge } from '@mantine/core';
 import * as api from './api';
 import { io } from 'socket.io-client';
+import RoundIntro from './stages/RoundIntro';
+import Guessing from './stages/Guessing';
+import Scoreboard from './stages/Scoreboard';
+import JoinGameForm from './stages/JoinGameForm';
+import PlayerLobby from './stages/PlayerLobby';
 
-function JoinGameForm({ onJoin, loading }) {
-    const [playerName, setPlayerName] = useState('');
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (playerName.trim()) {
-            onJoin(playerName.trim());
-        }
-    };
-
-    return (
-        <Paper withBorder shadow="md" p="lg" mt="lg">
-            <Title order={3}>Join Game</Title>
-            <form onSubmit={handleSubmit}>
-                <Stack>
-                    <TextInput
-                        placeholder="Your Name"
-                        label="Enter your name to join"
-                        required
-                        value={playerName}
-                        onChange={(e) => setPlayerName(e.currentTarget.value)}
-                    />
-                    <Button type="submit" loading={loading}>
-                        Join
-                    </Button>
-                </Stack>
-            </form>
-        </Paper>
-    );
-}
-
-
-function PlayerLobby({ player, onStorySubmit, loading }) {
-    const [story, setStory] = useState('');
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        if (story.trim()) {
-            onStorySubmit(story.trim());
-        }
-    };
-
-    return (
-        <Paper withBorder shadow="md" p="lg" mt="lg">
-            <Title order={3}>Welcome, {player.name}!</Title>
-            <Text c="dimmed">The game will begin once everyone has submitted a story.</Text>
-
-            <form onSubmit={handleSubmit}>
-                <Stack mt="md">
-                    <Textarea
-                        placeholder="Once, I convinced everyone that..."
-                        label="Your secret story"
-                        required
-                        autosize
-                        minRows={4}
-                        value={story}
-                        onChange={(e) => setStory(e.currentTarget.value)}
-                        disabled={player.has_submitted_story}
-                    />
-                    <Button
-                        type="submit"
-                        loading={loading}
-                        disabled={player.has_submitted_story}
-                    >
-                        {player.has_submitted_story ? "Waiting for others..." : "Submit & Ready Up"}
-                    </Button>
-                </Stack>
-            </form>
-        </Paper>
-    );
-}
+// Lobby components moved to ./stages
 
 
 export function GameRoom() {
@@ -95,6 +30,14 @@ export function GameRoom() {
             try {
                 const gameState = await api.getGameState(gameCode);
                 setGame(gameState);
+                // initialize deadline from server if present
+                try {
+                    if (gameState?.stage_deadline) {
+                        setDeadline(Math.floor(gameState.stage_deadline * 1000));
+                    } else if (gameState?.durations && gameState?.stage) {
+                        setDeadline(Date.now() + ((gameState.durations[gameState.stage] || 0) * 1000));
+                    }
+                } catch { }
                 setError('');
             } catch (err) {
                 console.error("Failed to fetch game state:", err);
@@ -119,9 +62,13 @@ export function GameRoom() {
             try {
                 const updated = await api.getGameState(gameCode);
                 setGame(updated);
-                // reset countdown on stage change
+                // prefer server deadline when available, else fallback to durations map
                 try {
-                    setDeadline(Date.now() + ((updated?.durations?.[updated?.stage] || 0) * 1000));
+                    if (updated?.stage_deadline) {
+                        setDeadline(Math.floor(updated.stage_deadline * 1000));
+                    } else {
+                        setDeadline(Date.now() + ((updated?.durations?.[updated?.stage] || 0) * 1000));
+                    }
                 } catch { }
             } catch (e) {
                 console.error('Failed to refresh state after socket update', e);
@@ -268,53 +215,14 @@ export function GameRoom() {
                                     <Text mt="xs">{game.current_story.content}</Text>
                                 </Paper>
                             )}
+                            {game.stage === 'round_intro' && (
+                                <RoundIntro game={game} />
+                            )}
                             {game.stage === 'guessing' && currentPlayer && game.current_story && (
-                                <Paper withBorder shadow="xs" p="md" mt="md">
-                                    {game.current_story.author_id === currentPlayer.id ? (
-                                        <Text c="dimmed">You're the author. Waiting for others to guess…</Text>
-                                    ) : (
-                                        <>
-                                            <Title order={5}>Who wrote this?</Title>
-                                            <Group mt="sm">
-                                                {game.players.filter(p => p.id !== currentPlayer.id).map(p => (
-                                                    <Button key={p.id}
-                                                        size="xs"
-                                                        variant="light"
-                                                        disabled={!!game.players.find(pp => pp.id === currentPlayer.id)?.has_guessed_current}
-                                                        onClick={async () => {
-                                                            try {
-                                                                await api.submitGuess(gameCode, currentPlayer.id, p.id);
-                                                                const updated = await api.getGameState(gameCode);
-                                                                setGame(updated);
-                                                            } catch (e) {
-                                                                setError(e.message || 'Could not submit guess');
-                                                            }
-                                                        }}>
-                                                        {p.name}
-                                                    </Button>
-                                                ))}
-                                            </Group>
-                                            {game.players.find(pp => pp.id === currentPlayer.id)?.has_guessed_current && (
-                                                <Text mt="sm">You guessed!</Text>
-                                            )}
-                                            <Text c="dimmed" mt="sm">Guesses: {game.current_story_guess_count} / {Math.max(0, game.players.length - 1)}</Text>
-                                        </>
-                                    )}
-                                </Paper>
+                                <Guessing game={game} currentPlayer={currentPlayer} gameCode={gameCode} setGame={setGame} setError={setError} api={api} />
                             )}
                             {game.stage === 'scoreboard' && (
-                                <Paper withBorder shadow="xs" p="md" mt="md">
-                                    <Title order={5}>Round results</Title>
-                                    <Text c="dimmed" size="sm">Scores updated. Totals shown below.</Text>
-                                    <Stack mt="xs">
-                                        {game.players.sort((a, b) => b.score - a.score).map(p => (
-                                            <Group key={p.id} position="apart">
-                                                <Text>{p.name}</Text>
-                                                <Badge>{p.score}</Badge>
-                                            </Group>
-                                        ))}
-                                    </Stack>
-                                </Paper>
+                                <Scoreboard game={game} />
                             )}
                             {isController && (
                                 <Button mt="md" onClick={async () => {

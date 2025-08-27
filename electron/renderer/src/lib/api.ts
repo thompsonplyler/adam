@@ -25,7 +25,7 @@ export type GameState = {
     id: number;
     game_code: string;
     status: 'lobby' | 'in_progress' | 'finished';
-    stage?: 'round_intro' | 'scoreboard' | 'finished';
+    stage?: 'round_intro' | 'guessing' | 'scoreboard' | 'finished';
     players: Player[];
     current_round?: number | null;
     total_rounds?: number | null;
@@ -33,6 +33,7 @@ export type GameState = {
     current_story?: { id: number; content: string; author_id: number } | null;
     current_story_guess_count?: number;
     durations?: { round_intro?: number; guessing?: number; scoreboard?: number };
+    stage_deadline?: number; // unix timestamp seconds
 };
 
 export async function createGame(): Promise<{ game_code: string }> {

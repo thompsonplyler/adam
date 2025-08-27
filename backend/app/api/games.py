@@ -2,8 +2,9 @@ from flask import Blueprint, jsonify, request, current_app
 from app import db, socketio
 from app.models import Game, Player, Story, Guess
 import json
-import time
 from typing import Set, Tuple
+from app.services.games.scoring import score_current_round as svc_score_current_round
+from app.services.games.scheduler import schedule_stage_timer as svc_schedule_stage_timer
 
 
 games = Blueprint('games', __name__)
@@ -12,31 +13,7 @@ games = Blueprint('games', __name__)
 _scheduled_stage_keys: Set[Tuple[int, str, int]] = set()
 
 def _score_current_round(game: Game) -> None:
-    if not game.current_story_id:
-        return
-    story = Story.query.get(game.current_story_id)
-    author = Player.query.get(story.author_id) if story else None
-    if not author:
-        return
-    guesses = Guess.query.filter_by(story_id=game.current_story_id).all()
-    players = Player.query.filter_by(game_id=game.id).all()
-    non_author_ids = {p.id for p in players if p.id != author.id}
-    for g in guesses:
-        guesser = Player.query.get(g.guesser_id)
-        if not guesser:
-            continue
-        if g.guessed_player_id == author.id:
-            guesser.score += 1
-            db.session.add(guesser)
-    wrong_or_missing_ids = non_author_ids - {g.guesser_id for g in guesses if g.guessed_player_id == author.id}
-    if wrong_or_missing_ids:
-        author.score += len(wrong_or_missing_ids)
-        db.session.add(author)
-    db.session.commit()
-    try:
-        current_app.logger.info(f"[score] game={game.id} round={game.current_round} scored: author={author.id if author else 'n/a'} correct={len(guesses) - len(wrong_or_missing_ids)} wrong_or_missing={len(wrong_or_missing_ids)}")
-    except Exception:
-        pass
+    svc_score_current_round(game)
 
 def _set_next_round_or_finish(game: Game) -> None:
     prev_round = int(game.current_round or 0)
@@ -67,75 +44,7 @@ def _set_next_round_or_finish(game: Game) -> None:
     socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
 
 def _schedule_stage_timer(app, game_id: int) -> None:
-    if app.config.get('TESTING'):
-        return
-    with app.app_context():
-        game = Game.query.filter_by(id=game_id).first()
-        if not game or game.status != 'in_progress' or not game.stage:
-            return
-        stage = game.stage
-        round_idx = int(game.current_round or 0)
-        key = (game.id, stage, round_idx)
-        # Determine duration
-        if stage == 'round_intro':
-            duration = int(app.config.get('ROUND_INTRO_DURATION_SEC', 5))
-        elif stage == 'guessing':
-            duration = int(app.config.get('GUESS_DURATION_SEC', 20))
-        elif stage == 'scoreboard':
-            duration = int(app.config.get('SCOREBOARD_DURATION_SEC', 6))
-        else:
-            return
-        if key in _scheduled_stage_keys:
-            try:
-                app.logger.info(f"[timer-skip] game={game.id} stage={stage} round={round_idx} already scheduled")
-            except Exception:
-                pass
-            return
-        _scheduled_stage_keys.add(key)
-        try:
-            app.logger.info(f"[timer-set] game={game.id} stage={stage} round={round_idx} duration={duration}s")
-        except Exception:
-            pass
-
-    def _worker(expected_stage: str, gid: int, expected_round: int):
-        time.sleep(duration)
-        with app.app_context():
-            g = Game.query.filter_by(id=gid).first()
-            _scheduled_stage_keys.discard((gid, expected_stage, expected_round))
-            if not g:
-                return
-            try:
-                app.logger.info(f"[timer-fire] game={gid} expected_stage={expected_stage} expected_round={expected_round} actual_stage={g.stage} actual_round={g.current_round}")
-            except Exception:
-                pass
-            if g.status != 'in_progress' or g.stage != expected_stage or int(g.current_round or 0) != expected_round:
-                try:
-                    app.logger.info(f"[timer-abort] game={gid} mismatch status/stage/round")
-                except Exception:
-                    pass
-                return
-            if expected_stage == 'round_intro':
-                g.stage = 'guessing'
-                db.session.add(g)
-                db.session.commit()
-                socketio.emit('state_update', {'game_code': g.game_code}, to=f"game:{g.game_code}", namespace='/ws')
-                _schedule_stage_timer(app, g.id)
-                return
-            if expected_stage == 'guessing':
-                _score_current_round(g)
-                g.stage = 'scoreboard'
-                db.session.add(g)
-                db.session.commit()
-                socketio.emit('state_update', {'game_code': g.game_code}, to=f"game:{g.game_code}", namespace='/ws')
-                _schedule_stage_timer(app, g.id)
-                return
-            if expected_stage == 'scoreboard':
-                _set_next_round_or_finish(g)
-                if g.status == 'in_progress':
-                    _schedule_stage_timer(app, g.id)
-                return
-
-    socketio.start_background_task(_worker, stage, game.id, int(game.current_round or 0))
+    svc_schedule_stage_timer(app, game_id)
 
 
 @games.route('/create', methods=['POST'])
@@ -270,85 +179,7 @@ def start_game(game_code):
     db.session.commit()
 
     socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
-    # Schedule auto-advance from initial round_intro to guessing after intro duration
     _schedule_stage_timer(current_app._get_current_object(), game.id)
-    try:
-        app = current_app._get_current_object()
-        intro_dur = int(app.config.get('ROUND_INTRO_DURATION_SEC', 5))
-        def _intro_start():
-            with app.app_context():
-                g4 = Game.query.filter_by(id=game.id).first()
-                if g4 and g4.status == 'in_progress' and g4.stage == 'round_intro':
-                    g4.stage = 'guessing'
-                    db.session.add(g4)
-                    db.session.commit()
-                    socketio.emit('state_update', {'game_code': g4.game_code}, to=f"game:{g4.game_code}", namespace='/ws')
-                    # Chain guessing timer from here as well
-                    try:
-                        duration = int(app.config.get('GUESS_DURATION_SEC', 20))
-                        def _adv2():
-                            with app.app_context():
-                                g2 = Game.query.filter_by(id=g4.id).first()
-                                if g2 and g2.status == 'in_progress' and g2.stage == 'guessing':
-                                    # Score and move to scoreboard
-                                    if g2.current_story_id:
-                                        story = Story.query.get(g2.current_story_id)
-                                        author = Player.query.get(story.author_id) if story else None
-                                        if author:
-                                            guesses = Guess.query.filter_by(story_id=g2.current_story_id).all()
-                                            players2 = Player.query.filter_by(game_id=g2.id).all()
-                                            non_author_ids2 = {p.id for p in players2 if p.id != author.id}
-                                            for gu in guesses:
-                                                guesser = Player.query.get(gu.guesser_id)
-                                                if not guesser:
-                                                    continue
-                                                if gu.guessed_player_id == author.id:
-                                                    guesser.score += 1
-                                                    db.session.add(guesser)
-                                            wrong_or_missing_ids2 = non_author_ids2 - {gu.guesser_id for gu in guesses if gu.guessed_player_id == author.id}
-                                            if wrong_or_missing_ids2:
-                                                author.score += len(wrong_or_missing_ids2)
-                                                db.session.add(author)
-                                            db.session.commit()
-                                    g2.stage = 'scoreboard'
-                                    db.session.add(g2)
-                                    db.session.commit()
-                                    socketio.emit('state_update', {'game_code': g2.game_code}, to=f"game:{g2.game_code}", namespace='/ws')
-                                    # Schedule scoreboard auto-advance for first round path
-                                    try:
-                                        sb_dur0 = int(app.config.get('SCOREBOARD_DURATION_SEC', 6))
-                                        def _sb0():
-                                            with app.app_context():
-                                                g3 = Game.query.filter_by(id=g2.id).first()
-                                                if not g3 or g3.status != 'in_progress' or g3.stage != 'scoreboard':
-                                                    return
-                                                if g3.current_round < (g3.total_rounds or 0):
-                                                    g3.current_round += 1
-                                                    g3.stage = 'round_intro'
-                                                    try:
-                                                        order = json.loads(g3.play_order or '[]')
-                                                    except Exception:
-                                                        order = []
-                                                    idx = (g3.current_round - 1) if g3.current_round else 0
-                                                    next_author_id = order[idx] if 0 <= idx < len(order) else None
-                                                    next_story = Story.query.filter_by(game_id=g3.id, author_id=next_author_id).first() if next_author_id else None
-                                                    g3.current_story_id = next_story.id if next_story else None
-                                                else:
-                                                    g3.status = 'finished'
-                                                    g3.stage = 'finished'
-                                                db.session.add(g3)
-                                                db.session.commit()
-                                                socketio.emit('state_update', {'game_code': g3.game_code}, to=f"game:{g3.game_code}", namespace='/ws')
-                                        socketio.start_background_task(lambda: (time.sleep(sb_dur0), _sb0()))
-                                    except Exception:
-                                        pass
-                    
-                        socketio.start_background_task(lambda: (time.sleep(duration), _adv2()))
-                    except Exception:
-                        pass
-        socketio.start_background_task(lambda: (time.sleep(intro_dur), _intro_start()))
-    except Exception:
-        pass
     return jsonify(game.to_dict())
 
 
@@ -377,70 +208,7 @@ def advance_round(game_code):
         db.session.add(game)
         db.session.commit()
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
-        # Schedule auto-advance to scoreboard after guess duration
-        try:
-            duration = int(current_app.config.get('GUESS_DURATION_SEC', 20))
-            app = current_app._get_current_object()
-            def _adv():
-                with app.app_context():
-                    g2 = Game.query.filter_by(id=game.id).first()
-                    if g2 and g2.status == 'in_progress' and g2.stage == 'guessing':
-                        # Reuse pipeline: pretend controller calls advance to score
-                        # Score logic is inside the guessing branch; call directly here
-                        if g2.current_story_id:
-                            story = Story.query.get(g2.current_story_id)
-                            author = Player.query.get(story.author_id) if story else None
-                            if author:
-                                guesses = Guess.query.filter_by(story_id=g2.current_story_id).all()
-                                players = Player.query.filter_by(game_id=g2.id).all()
-                                non_author_ids = {p.id for p in players if p.id != author.id}
-                                for g in guesses:
-                                    guesser = Player.query.get(g.guesser_id)
-                                    if not guesser:
-                                        continue
-                                    if g.guessed_player_id == author.id:
-                                        guesser.score += 1
-                                        db.session.add(guesser)
-                                wrong_or_missing_ids = non_author_ids - {g.guesser_id for g in guesses if g.guessed_player_id == author.id}
-                                if wrong_or_missing_ids:
-                                    author.score += len(wrong_or_missing_ids)
-                                    db.session.add(author)
-                                db.session.commit()
-                        g2.stage = 'scoreboard'
-                        db.session.add(g2)
-                        db.session.commit()
-                        socketio.emit('state_update', {'game_code': g2.game_code}, to=f"game:{g2.game_code}", namespace='/ws')
-                        # Schedule scoreboard auto-advance
-                        try:
-                            sb_dur = int(app.config.get('SCOREBOARD_DURATION_SEC', 6))
-                            def _sb():
-                                with app.app_context():
-                                    g3 = Game.query.filter_by(id=g2.id).first()
-                                    if not g3 or g3.status != 'in_progress' or g3.stage != 'scoreboard':
-                                        return
-                                    if g3.current_round < (g3.total_rounds or 0):
-                                        g3.current_round += 1
-                                        g3.stage = 'round_intro'
-                                        try:
-                                            order = json.loads(g3.play_order or '[]')
-                                        except Exception:
-                                            order = []
-                                        idx = (g3.current_round - 1) if g3.current_round else 0
-                                        next_author_id = order[idx] if 0 <= idx < len(order) else None
-                                        next_story = Story.query.filter_by(game_id=g3.id, author_id=next_author_id).first() if next_author_id else None
-                                        g3.current_story_id = next_story.id if next_story else None
-                                    else:
-                                        g3.status = 'finished'
-                                        g3.stage = 'finished'
-                                    db.session.add(g3)
-                                    db.session.commit()
-                                    socketio.emit('state_update', {'game_code': g3.game_code}, to=f"game:{g3.game_code}", namespace='/ws')
-                                    _schedule_stage_timer(app, g3.id)
-                        except Exception:
-                            pass
-            socketio.start_background_task(lambda: (time.sleep(duration), _adv()))
-        except Exception:
-            pass
+        _schedule_stage_timer(current_app._get_current_object(), game.id)
         return jsonify(game.to_dict())
 
     # guessing -> scoreboard OR scoreboard -> next round/finished
@@ -475,35 +243,7 @@ def advance_round(game_code):
         db.session.add(game)
         db.session.commit()
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
-        # Schedule scoreboard auto-advance when reaching scoreboard via manual Next
-        try:
-            app = current_app._get_current_object()
-            sb_dur = int(app.config.get('SCOREBOARD_DURATION_SEC', 6))
-            def _sb_manual():
-                with app.app_context():
-                    g3 = Game.query.filter_by(id=game.id).first()
-                    if not g3 or g3.status != 'in_progress' or g3.stage != 'scoreboard':
-                        return
-                    if g3.current_round < (g3.total_rounds or 0):
-                        g3.current_round += 1
-                        g3.stage = 'round_intro'
-                        try:
-                            order = json.loads(g3.play_order or '[]')
-                        except Exception:
-                            order = []
-                        idx = (g3.current_round - 1) if g3.current_round else 0
-                        next_author_id = order[idx] if 0 <= idx < len(order) else None
-                        next_story = Story.query.filter_by(game_id=g3.id, author_id=next_author_id).first() if next_author_id else None
-                        g3.current_story_id = next_story.id if next_story else None
-                    else:
-                        g3.status = 'finished'
-                        g3.stage = 'finished'
-                    db.session.add(g3)
-                    db.session.commit()
-                    socketio.emit('state_update', {'game_code': g3.game_code}, to=f"game:{g3.game_code}", namespace='/ws')
-            socketio.start_background_task(lambda: (time.sleep(sb_dur), _sb_manual()))
-        except Exception:
-            pass
+        _schedule_stage_timer(current_app._get_current_object(), game.id)
         return jsonify(game.to_dict())
     if game.current_round < game.total_rounds:
         game.current_round += 1
@@ -520,84 +260,7 @@ def advance_round(game_code):
         db.session.add(game)
         db.session.commit()
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
-        # Schedule auto-advance from round_intro to guessing after intro duration
-        try:
-            app = current_app._get_current_object()
-            intro_dur = int(app.config.get('ROUND_INTRO_DURATION_SEC', 5))
-            def _intro():
-                with app.app_context():
-                    g4 = Game.query.filter_by(id=game.id).first()
-                    if g4 and g4.status == 'in_progress' and g4.stage == 'round_intro':
-                        g4.stage = 'guessing'
-                        db.session.add(g4)
-                        db.session.commit()
-                        socketio.emit('state_update', {'game_code': g4.game_code}, to=f"game:{g4.game_code}", namespace='/ws')
-                        # Chain guessing timer from here as well
-                        try:
-                            duration = int(app.config.get('GUESS_DURATION_SEC', 20))
-                            def _adv2():
-                                with app.app_context():
-                                    g2 = Game.query.filter_by(id=g4.id).first()
-                                    if g2 and g2.status == 'in_progress' and g2.stage == 'guessing':
-                                        # Score and move to scoreboard (reuse logic above)
-                                        if g2.current_story_id:
-                                            story = Story.query.get(g2.current_story_id)
-                                            author = Player.query.get(story.author_id) if story else None
-                                            if author:
-                                                guesses = Guess.query.filter_by(story_id=g2.current_story_id).all()
-                                                players = Player.query.filter_by(game_id=g2.id).all()
-                                                non_author_ids = {p.id for p in players if p.id != author.id}
-                                                for g in guesses:
-                                                    guesser = Player.query.get(g.guesser_id)
-                                                    if not guesser:
-                                                        continue
-                                                    if g.guessed_player_id == author.id:
-                                                        guesser.score += 1
-                                                        db.session.add(guesser)
-                                                wrong_or_missing_ids = non_author_ids - {g.guesser_id for g in guesses if g.guessed_player_id == author.id}
-                                                if wrong_or_missing_ids:
-                                                    author.score += len(wrong_or_missing_ids)
-                                                    db.session.add(author)
-                                                db.session.commit()
-                                        g2.stage = 'scoreboard'
-                                        db.session.add(g2)
-                                        db.session.commit()
-                                        socketio.emit('state_update', {'game_code': g2.game_code}, to=f"game:{g2.game_code}", namespace='/ws')
-                                        # Schedule scoreboard auto-advance for this path as well
-                                        try:
-                                            sb_dur2 = int(app.config.get('SCOREBOARD_DURATION_SEC', 6))
-                                            def _sb2():
-                                                with app.app_context():
-                                                    g3 = Game.query.filter_by(id=g2.id).first()
-                                                    if not g3 or g3.status != 'in_progress' or g3.stage != 'scoreboard':
-                                                        return
-                                                    if g3.current_round < (g3.total_rounds or 0):
-                                                        g3.current_round += 1
-                                                        g3.stage = 'round_intro'
-                                                        try:
-                                                            order = json.loads(g3.play_order or '[]')
-                                                        except Exception:
-                                                            order = []
-                                                        idx = (g3.current_round - 1) if g3.current_round else 0
-                                                        next_author_id = order[idx] if 0 <= idx < len(order) else None
-                                                        next_story = Story.query.filter_by(game_id=g3.id, author_id=next_author_id).first() if next_author_id else None
-                                                        g3.current_story_id = next_story.id if next_story else None
-                                                    else:
-                                                        g3.status = 'finished'
-                                                        g3.stage = 'finished'
-                                                    db.session.add(g3)
-                                                    db.session.commit()
-                                                    socketio.emit('state_update', {'game_code': g3.game_code}, to=f"game:{g3.game_code}", namespace='/ws')
-                                                    _schedule_stage_timer(app, g3.id)
-                                        except Exception:
-                                            pass
-                        
-                            socketio.start_background_task(lambda: (time.sleep(duration), _adv2()))
-                        except Exception:
-                            pass
-            socketio.start_background_task(lambda: (time.sleep(intro_dur), _intro()))
-        except Exception:
-            pass
+        _schedule_stage_timer(current_app._get_current_object(), game.id)
         return jsonify(game.to_dict())
 
     game.status = 'finished'
