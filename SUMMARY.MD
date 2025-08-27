@@ -23,11 +23,33 @@ This document outlines the development process, key architectural decisions, and
 
 **Core Gameplay Loop, Timers & State Synchronization (Recent)**
 
-- Backend now models: `Game.status` ("lobby" | "in_progress" | "finished") and `Game.stage` ("round_intro" | "scoreboard"; terminal "finished").
+- Backend models: `Game.status` ("lobby" | "in_progress" | "finished") and `Game.stage` ("round_intro" | "guessing" | "scoreboard"; terminal "finished").
 - On Start (controller-only), backend sets: `status='in_progress'`, `stage='round_intro'`, `current_round=1`, `total_rounds=players.length`, and `play_order` by join order.
 - Advance endpoint (controller-only) transitions: `round_intro → guessing → scoreboard → round_intro(next) → finished`, emitting `state_update` each step.
 - Web client shows status badge, stage badge, "Round X of N", and a controller-only Next button wired to `/advance`.
-- Auto-advance timers: centralized scheduler runs on every stage change with durations from env (`ROUND_INTRO_DURATION_SEC`, `GUESS_DURATION_SEC`, `SCOREBOARD_DURATION_SEC`), keyed by `(game_id, stage, current_round)` to avoid collisions. Visible countdowns in both clients.
+- Auto-advance timers: centralized scheduler runs on every stage change with durations from env (`ROUND_INTRO_DURATION_SEC`, `GUESS_DURATION_SEC`, `SCOREBOARD_DURATION_SEC`), keyed by `(game_id, stage, current_round)`. Guessing also auto-ends early when all non-authors have guessed. Final screen exposes `winners` and holds an optional deadline.
+
+**Organizational Notes**
+
+- Backend routes live in `app/api/` (Blueprints); core game logic moved to `app/services/games/` (`scoring.py`, `scheduler.py`). Routes call services.
+- Web client: `GameRoom.jsx` renders via stage-specific components in `src/stages/*`. Finished state short-circuits to a winner-only view for all users.
+- Electron renderer mirrors the stage components and displays a read-only view.
+
+**Conventions & Data Shapes**
+
+- `GET /api/games/:code/state` returns:
+  - `status`, `stage`, `current_round`, `total_rounds`, `play_order`
+  - `current_story`, `current_story_guess_count`
+  - `stage_deadline` (unix seconds) for countdowns
+  - `round_history` (per-round summary), `winners` on finish
+  - `players` with `has_submitted_story`, `has_guessed_current` (derived)
+
+**Recent Fixes & Lessons**
+
+- Second-round timer stalls fixed by centralizing timers and correct task args
+- Guessing early-advance on all non-authors guessed (server-scored)
+- Controller-only differences limited to lobby Start; final screen unified for all
+- Error handling: minimum-players error persists until next click
 
 **Session Owner Lifecycle (Electron is session owner)**
 

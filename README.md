@@ -17,15 +17,17 @@ This repo contains a Flask backend, a React (Vite + Mantine) web client, and a T
    pip install -r backend/requirements.txt
    ```
 3. Ensure PostgreSQL is running and `DATABASE_URL` points to a database you can access.
-4. Initialize the database:
-   ```bash
-   # Optional utility to reset and seed users
-   cd backend
-   python -m flask --app run db-reset
-   ```
-5. Activate the virtual environment and run the dev server via Flask (PowerShell syntax shown):
+4. Initialize or reset the database (PowerShell):
    ```powershell
-   cd backend; venv\Scripts\activate; $env:FLASK_APP="run.py"; $env:FLASK_ENV="development"; flask run
+   cd backend; venv\Scripts\activate; flask db-reset
+   ```
+5. Run the dev server with timers/env (PowerShell-friendly):
+   ```powershell
+   cd backend; venv\Scripts\activate;
+   $env:FLASK_APP="run.py"; $env:FLASK_ENV="development";
+   $env:ROUND_INTRO_DURATION_SEC="5"; $env:GUESS_DURATION_SEC="20"; $env:SCOREBOARD_DURATION_SEC="6";
+   $env:MIN_PLAYERS="2"; $env:FINAL_SCREEN_DURATION_SEC="20";
+   flask run
    ```
    - API base URL: `http://localhost:5000/api`
    - Websocket namespace: `http://localhost:5000/ws`
@@ -46,12 +48,13 @@ To confirm the backend can reach your configured database, you can run:
 cd backend; venv\Scripts\activate; python -c "from app import create_app, db; a=create_app(); ctx=a.app_context(); ctx.push(); print('DB URL:', db.engine.url); c=db.engine.connect(); c.close(); print('DB CONNECTED')"
 ```
 
-### Manual real-time verification
+### Manual real-time verification (must-pass)
 
 1. Start backend and frontend as above.
 2. Start Electron (see below), click "Start Game" to create a code.
 3. In the web app, enter the code on the home screen to join from each player.
-4. Each player submits a story; the first player to join sees "Start Game" once all are ready. Starting the game flips everyone to "In Progress".
+4. Each player submits a story; controller (first to join) sees "Start Game" when all are ready. Starting the game flips everyone to "In Progress".
+5. During play: server auto-advances stages; guessing ends early if all non-authors guessed; scoreboard shows totals; final screen shows winner(s) only.
 
 ## Frontend (React + Vite)
 
@@ -72,10 +75,10 @@ cd backend; venv\Scripts\activate; python -c "from app import create_app, db; a=
 
 ### Quick Flow
 
-- From the Home page, click "Create Game" to get a `GAME_CODE`.
-- Share the URL `/game/GAME_CODE` with players.
-- Players join with a display name and submit a story.
-- When anyone submits a story, connected clients in that game room receive a `state_update` over websockets and refresh the game state.
+- Electron: click "Start Game" to create a lobby and code.
+- Players join at `/game/CODE`, enter a name, submit a story.
+- Controller (first joiner) starts the game once all have submitted.
+- Stages: round_intro → guessing → scoreboard → next round … → finished. Timers are server-driven.
 
 ## Electron app (TypeScript)
 
@@ -99,10 +102,10 @@ Dev (Windows):
 
 Usage (local):
 
-- Click "Start Game" to create a lobby and code
+- Start Game (creates lobby + code)
 - Share the code; web clients join at `/game/CODE`
-- When all players are ready (stories submitted), the first joiner (controller) clicks "Start Game"
-- Quit Lobby in Electron ends the session and boots players back to the code entry screen (closing the window also ends the session after a brief grace period)
+- When all players are ready, controller clicks Start Game
+- Quit Lobby in Electron ends the session (graceful cleanup) and boots web clients to the join screen
 
 Troubleshooting (Windows):
 
@@ -123,14 +126,21 @@ The backend auto-advances the game at each stage based on environment-configurab
 venv\Scripts\activate; $env:ROUND_INTRO_DURATION_SEC="5"; $env:GUESS_DURATION_SEC="20"; $env:SCOREBOARD_DURATION_SEC="6"; flask run
 ```
 
-Clients display a visible countdown for the current stage and update automatically on stage changes.
+Clients display stage countdowns. Final screen does not auto-redirect; players choose next action.
 
-## Render Deployment (Backend)
+Config toggles (optional):
 
-- Set environment variables: `DATABASE_URL`, `SECRET_KEY`.
-- Build command: `pip install -r backend/requirements.txt`
-- Start command: `python backend/run.py`
-- Make sure Render service enables websockets.
+- `CONTROLLER_DEBOUNCE_MS` – debounces controller actions (start/advance). Default 0.
+- `TIMER_HEARTBEAT_SEC` – logs timer heartbeats. Default 0.
+
+## Deployment (Backend)
+
+- Recommended: Gunicorn + eventlet for Flask-SocketIO
+  ```bash
+  gunicorn --worker-class eventlet -w 1 run:app --bind 0.0.0.0:5000
+  ```
+- Required env: `DATABASE_URL`, `SECRET_KEY`, plus stage durations and `MIN_PLAYERS` as needed
+- Ensure your platform enables websockets and long-polling
 
 ## Tests
 
