@@ -18,7 +18,7 @@ def schedule_stage_timer(app, game_id: int) -> None:
     - Ensures a single timer per (game_id, stage, round)
     - Advances through the pipeline: round_intro -> guessing -> scoreboard -> next/finished
     """
-    if app.config.get('TESTING'):
+    if app.config.get('TESTING') and not app.config.get('ENABLE_SCHEDULER_IN_TESTS'):
         return
 
     with app.app_context():
@@ -64,7 +64,23 @@ def schedule_stage_timer(app, game_id: int) -> None:
             pass
 
     def _worker(expected_stage: str, gid: int, expected_round: int, delay: int):
-        time.sleep(delay)
+        # heartbeat sleep loop if enabled
+        try:
+            hb = int(app.config.get('TIMER_HEARTBEAT_SEC', 0))
+        except Exception:
+            hb = 0
+        if hb and hb > 0:
+            slept = 0
+            while slept < delay:
+                step = min(hb, delay - slept)
+                time.sleep(step)
+                slept += step
+                try:
+                    app.logger.info(f"[timer-heartbeat] game={gid} stage={expected_stage} round={expected_round} remaining={max(0, delay - slept)}s")
+                except Exception:
+                    pass
+        else:
+            time.sleep(delay)
         with app.app_context():
             g = Game.query.filter_by(id=gid).first()
             _scheduled_stage_keys.discard((gid, expected_stage, expected_round))
@@ -119,6 +135,11 @@ def schedule_stage_timer(app, game_id: int) -> None:
                 else:
                     g.status = 'finished'
                     g.stage = 'finished'
+                    try:
+                        final_hold = int(app.config.get('FINAL_SCREEN_DURATION_SEC', 20))
+                        g.stage_deadline = time.time() + final_hold
+                    except Exception:
+                        pass
                 db.session.add(g)
                 db.session.commit()
                 socketio.emit('state_update', {'game_code': g.game_code}, to=f"game:{g.game_code}", namespace='/ws')
@@ -126,6 +147,9 @@ def schedule_stage_timer(app, game_id: int) -> None:
                     schedule_stage_timer(app, g.id)
                 return
 
-    socketio.start_background_task(_worker, stage, game.id, round_idx, duration)
+    if app.config.get('TESTING'):
+        _worker(stage, game.id, round_idx, duration)
+    else:
+        socketio.start_background_task(_worker, stage, game.id, round_idx, duration)
 
 

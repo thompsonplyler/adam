@@ -34,6 +34,14 @@ export type GameState = {
     current_story_guess_count?: number;
     durations?: { round_intro?: number; guessing?: number; scoreboard?: number };
     stage_deadline?: number; // unix timestamp seconds
+    round_history?: Array<{
+        round: number;
+        story_id: number;
+        author_id: number;
+        guesses: { guesser_id: number; guessed_player_id: number }[];
+        correct_guessers: number[];
+        author_points_awarded: number;
+    }>;
 };
 
 export async function createGame(): Promise<{ game_code: string }> {

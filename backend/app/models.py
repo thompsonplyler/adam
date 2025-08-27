@@ -54,7 +54,7 @@ class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     game_code = db.Column(db.String(4), unique=True, index=True)
     status = db.Column(db.String(64), default='lobby') # lobby, in_progress, finished
-    stage = db.Column(db.String(64), nullable=True) # round_intro, scoreboard, finished (when status is finished)
+    stage = db.Column(db.String(64), nullable=True) # round_intro, guessing, scoreboard, finished (when status is finished)
     players = db.relationship('Player', back_populates='game')
     stories = db.relationship('Story', foreign_keys='Story.game_id', backref='game', lazy='dynamic')
     current_story_id = db.Column(db.Integer, db.ForeignKey('story.id', name='fk_game_current_story_id', use_alter=True), nullable=True)
@@ -62,6 +62,8 @@ class Game(db.Model):
     current_round = db.Column(db.Integer, nullable=True)
     total_rounds = db.Column(db.Integer, nullable=True)
     play_order = db.Column(db.Text, nullable=True)  # JSON-encoded list of player ids
+    stage_deadline = db.Column(db.Float, nullable=True) # Unix timestamp seconds
+    round_history = db.Column(db.Text, nullable=True)  # JSON-encoded list of per-round summaries
     
     @property
     def current_story(self):
@@ -104,6 +106,7 @@ class Game(db.Model):
             'game_code': self.game_code,
             'status': self.status,
             'stage': self.stage,
+            'stage_deadline': self.stage_deadline,
             'players': players_serialized,
             'current_story': self.current_story.to_dict() if self.current_story else None,
             'current_story_guess_count': Guess.query.filter_by(story_id=self.current_story_id).count() if self.current_story_id else 0,
@@ -111,7 +114,19 @@ class Game(db.Model):
             'current_round': self.current_round,
             'total_rounds': self.total_rounds,
             'play_order': json.loads(self.play_order) if self.play_order else None,
+            'round_history': json.loads(self.round_history) if self.round_history else [],
+            'winners': _compute_winners(players_serialized) if self.status == 'finished' else None,
         }
+
+
+def _compute_winners(players_serialized):
+    if not players_serialized:
+        return []
+    max_score = max(p.get('score', 0) for p in players_serialized)
+    return [
+        {'id': p['id'], 'name': p['name'], 'score': p.get('score', 0)}
+        for p in players_serialized if p.get('score', 0) == max_score
+    ]
 
 class Story(db.Model):
     __tablename__ = 'story'

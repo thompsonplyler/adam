@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request, current_app
 from app import db, socketio
 from app.models import Game, Player, Story, Guess
 import json
+import time
 from typing import Set, Tuple
 from app.services.games.scoring import score_current_round as svc_score_current_round
 from app.services.games.scheduler import schedule_stage_timer as svc_schedule_stage_timer
@@ -11,6 +12,7 @@ games = Blueprint('games', __name__)
 
 # Centralized stage timer scheduler (runtime-only; disabled in tests)
 _scheduled_stage_keys: Set[Tuple[int, str, int]] = set()
+_last_controller_action: dict[str, float] = {}
 
 def _score_current_round(game: Game) -> None:
     svc_score_current_round(game)
@@ -139,6 +141,18 @@ def get_game_state(game_code):
 def start_game(game_code):
     data = request.get_json() or {}
     controller_id = data.get('controller_id')
+    # Debounce
+    try:
+        debounce_ms = int(current_app.config.get('CONTROLLER_DEBOUNCE_MS', 0))
+    except Exception:
+        debounce_ms = 0
+    if debounce_ms > 0:
+        key = f"start:{game_code}:{controller_id}"
+        now = time.time() * 1000.0
+        last = _last_controller_action.get(key, 0)
+        if now - last < debounce_ms:
+            return jsonify({'message': 'debounced'}), 202
+        _last_controller_action[key] = now
 
     game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
     if game.status == 'in_progress':
@@ -158,9 +172,13 @@ def start_game(game_code):
     if any(not p.has_submitted_story for p in players):
         return jsonify({'error': 'All players must submit a story before starting'}), 400
 
-    # Enforce minimum players (configurable later); default 2
-    if len(players) < 2:
-        return jsonify({'error': 'At least 2 players are required to start'}), 400
+    # Enforce minimum players (configurable)
+    try:
+        min_players = int(current_app.config.get('MIN_PLAYERS', 2))
+    except Exception:
+        min_players = 2
+    if len(players) < min_players:
+        return jsonify({'error': f'At least {min_players} players are required to start'}), 400
 
     # Compute rounds on start
     game.status = 'in_progress'
@@ -187,6 +205,18 @@ def start_game(game_code):
 def advance_round(game_code):
     data = request.get_json() or {}
     controller_id = data.get('controller_id')
+    # Debounce
+    try:
+        debounce_ms = int(current_app.config.get('CONTROLLER_DEBOUNCE_MS', 0))
+    except Exception:
+        debounce_ms = 0
+    if debounce_ms > 0:
+        key = f"advance:{game_code}:{controller_id}"
+        now = time.time() * 1000.0
+        last = _last_controller_action.get(key, 0)
+        if now - last < debounce_ms:
+            return jsonify({'message': 'debounced'}), 202
+        _last_controller_action[key] = now
 
     game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
     if game.status == 'finished':
@@ -245,6 +275,20 @@ def advance_round(game_code):
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
         _schedule_stage_timer(current_app._get_current_object(), game.id)
         return jsonify(game.to_dict())
+    # If already at scoreboard due to early auto-advance triggered by guesses,
+    # treat this call as idempotent (no-op) so clients expecting a transition
+    # to scoreboard still receive scoreboard instead of skipping ahead.
+    if game.stage == 'scoreboard' and game.current_story_id:
+        try:
+            author_id = Story.query.get(game.current_story_id).author_id
+            total_players = Player.query.filter_by(game_id=game.id).count()
+            eligible_guessers = max(0, total_players - 1 if author_id else total_players)
+            count = Guess.query.filter_by(story_id=game.current_story_id).count()
+            if eligible_guessers > 0 and count >= eligible_guessers:
+                return jsonify(game.to_dict())
+        except Exception:
+            pass
+
     if game.current_round < game.total_rounds:
         game.current_round += 1
         game.stage = 'round_intro'
@@ -294,4 +338,23 @@ def submit_guess(game_code):
     db.session.add(new_guess)
     db.session.commit()
     socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+    # Early auto-advance: if all eligible guesses submitted, move to scoreboard via scheduler
+    try:
+        if game.stage == 'guessing' and game.current_story_id:
+            # Count unique non-author guesses
+            from app.models import Guess as GuessModel
+            author_id = game.current_story.author_id if game.current_story else None
+            non_author_ids = {p.id for p in players if p.id != author_id}
+            guessed_ids = {g.guesser_id for g in GuessModel.query.filter_by(story_id=game.current_story_id).all()}
+            if non_author_ids and non_author_ids.issubset(guessed_ids):
+                gnow = Game.query.filter_by(id=game.id).first()
+                if gnow and gnow.status == 'in_progress' and gnow.stage == 'guessing':
+                    _score_current_round(gnow)
+                    gnow.stage = 'scoreboard'
+                    db.session.add(gnow)
+                    db.session.commit()
+                    socketio.emit('state_update', {'game_code': gnow.game_code}, to=f"game:{gnow.game_code}", namespace='/ws')
+                    _schedule_stage_timer(current_app._get_current_object(), gnow.id)
+    except Exception:
+        pass
     return jsonify({'message': 'Guess submitted'})

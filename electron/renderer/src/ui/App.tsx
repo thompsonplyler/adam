@@ -5,6 +5,7 @@ import { createGame, getGameState, type GameState } from '../lib/api';
 import RoundIntro from './stages/RoundIntro';
 import Guessing from './stages/Guessing';
 import Scoreboard from './stages/Scoreboard';
+import FinalWinners from './stages/FinalWinners';
 
 export function App() {
     const [socket, setSocket] = useState<Socket | null>(null);
@@ -177,10 +178,7 @@ export function App() {
                 </Paper>
             )}
             {isFinished && (
-                <Paper withBorder p="md" mt="md">
-                    <Title order={3}>Game finished</Title>
-                    <Text c="dimmed">Thanks for playing!</Text>
-                </Paper>
+                <FinalWinners state={state} remainingSec={Math.max(0, Math.ceil((((state as any)?.stage_deadline ? ((state as any).stage_deadline * 1000) : Date.now()) - nowTs) / 1000))} />
             )}
         </Container>
     );

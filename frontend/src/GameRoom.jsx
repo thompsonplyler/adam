@@ -8,6 +8,7 @@ import Guessing from './stages/Guessing';
 import Scoreboard from './stages/Scoreboard';
 import JoinGameForm from './stages/JoinGameForm';
 import PlayerLobby from './stages/PlayerLobby';
+import FinalWinners from './stages/FinalWinners';
 
 // Lobby components moved to ./stages
 
@@ -154,6 +155,23 @@ export function GameRoom() {
     const remainingSec = Math.ceil(remainingMs / 1000);
     const isFinished = game.status === 'finished';
 
+    if (isFinished) {
+        return (
+            <Container>
+                <Title order={1} align="center" mt="md">Game Code: {game.game_code}</Title>
+                <Group position="center" mt="xs">
+                    <Badge color='red'>Finished</Badge>
+                </Group>
+                <FinalWinners
+                    game={game}
+                    remainingSec={Math.max(0, Math.ceil(((game?.stage_deadline ? (game.stage_deadline * 1000) : Date.now()) - nowTs) / 1000))}
+                    onReturn={() => navigate('/')}
+                />
+                {error && <Text color="red" mt="md">{error}</Text>}
+            </Container>
+        );
+    }
+
     return (
         <Container>
             <Title order={1} align="center" mt="md">Game Code: {game.game_code}</Title>
@@ -169,24 +187,26 @@ export function GameRoom() {
             </Group>
 
             <SimpleGrid cols={2} spacing="lg" mt="lg">
-                <Paper withBorder shadow="md" p="lg">
-                    <Title order={3}>Players ({game.players.length})</Title>
-                    <Stack mt="sm">
-                        {game.players.map(p => (
-                            <Text key={p.id}>
-                                {p.name}
-                                {p.id === playerId ? ' (You)' : ''}
-                                {p.has_submitted_story ? ' ✅' : '...'}
-                            </Text>
-                        ))}
-                        {game.players.length === 0 && <Text c="dimmed">No one has joined yet.</Text>}
-                    </Stack>
-                </Paper>
+                {!isFinished && (
+                    <Paper withBorder shadow="md" p="lg">
+                        <Title order={3}>Players ({game.players.length})</Title>
+                        <Stack mt="sm">
+                            {game.players.map(p => (
+                                <Text key={p.id}>
+                                    {p.name}
+                                    {p.id === playerId ? ' (You)' : ''}
+                                    {p.has_submitted_story ? ' ✅' : '...'}
+                                </Text>
+                            ))}
+                            {game.players.length === 0 && <Text c="dimmed">No one has joined yet.</Text>}
+                        </Stack>
+                    </Paper>
+                )}
 
                 <div>
-                    {!isInProgress && !currentPlayer && <JoinGameForm onJoin={handleJoinGame} loading={loading} />}
-                    {!isInProgress && currentPlayer && <PlayerLobby player={currentPlayer} onStorySubmit={handleStorySubmit} loading={loading} />}
-                    {!isInProgress && currentPlayer && isController && allReady && (
+                    {game.status === 'lobby' && !currentPlayer && <JoinGameForm onJoin={handleJoinGame} loading={loading} />}
+                    {game.status === 'lobby' && currentPlayer && <PlayerLobby player={currentPlayer} onStorySubmit={handleStorySubmit} loading={loading} />}
+                    {game.status === 'lobby' && currentPlayer && isController && allReady && (
                         <Button mt="md" onClick={async () => {
                             try {
                                 await api.startGame(gameCode, currentPlayer.id);
@@ -238,13 +258,11 @@ export function GameRoom() {
                         </Paper>
                     )}
                     {isFinished && (
-                        <Paper withBorder shadow="md" p="lg" mt="lg">
-                            <Title order={3}>Game finished</Title>
-                            <Text c="dimmed">Thanks for playing!</Text>
-                            <Group mt="md">
-                                <Button variant="outline" onClick={() => navigate('/')}>Return to Main Menu</Button>
-                            </Group>
-                        </Paper>
+                        <FinalWinners
+                            game={game}
+                            remainingSec={Math.max(0, Math.ceil(((game?.stage_deadline ? (game.stage_deadline * 1000) : Date.now()) - nowTs) / 1000))}
+                            onReturn={() => navigate('/')}
+                        />
                     )}
                 </div>
 

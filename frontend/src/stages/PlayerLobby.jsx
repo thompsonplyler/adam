@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Paper, Title, Text, Stack, Textarea, Button } from '@mantine/core';
+import { Paper, Stack, Textarea, Button } from '@mantine/core';
 
 export default function PlayerLobby({ player, onStorySubmit, loading }) {
     const [story, setStory] = useState('');
@@ -13,11 +13,8 @@ export default function PlayerLobby({ player, onStorySubmit, loading }) {
 
     return (
         <Paper withBorder shadow="md" p="lg" mt="lg">
-            <Title order={3}>Welcome, {player.name}!</Title>
-            <Text c="dimmed">The game will begin once everyone has submitted a story.</Text>
-
             <form onSubmit={handleSubmit}>
-                <Stack mt="md">
+                <Stack>
                     <Textarea
                         placeholder="Once, I convinced everyone that..."
                         label="Your secret story"
