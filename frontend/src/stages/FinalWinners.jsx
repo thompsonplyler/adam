@@ -1,6 +1,6 @@
 import { Paper, Title, Text, Group, Badge, Stack, Button } from '@mantine/core';
 
-export default function FinalWinners({ game, remainingSec, onReturn }) {
+export default function FinalWinners({ game, onReturn }) {
     const winners = game?.winners && game.winners.length
         ? game.winners
         : deriveWinnersFromPlayers(game?.players || []);
@@ -16,9 +16,6 @@ export default function FinalWinners({ game, remainingSec, onReturn }) {
                     </Group>
                 ))}
             </Stack>
-            {typeof remainingSec === 'number' && (
-                <Text c="dimmed" mt="sm">Returning in {remainingSec}s</Text>
-            )}
             <Group mt="md">
                 <Button variant="outline" onClick={onReturn}>Return to Main Menu</Button>
             </Group>

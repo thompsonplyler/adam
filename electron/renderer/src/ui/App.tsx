@@ -178,7 +178,7 @@ export function App() {
                 </Paper>
             )}
             {isFinished && (
-                <FinalWinners state={state} remainingSec={Math.max(0, Math.ceil((((state as any)?.stage_deadline ? ((state as any).stage_deadline * 1000) : Date.now()) - nowTs) / 1000))} />
+                <FinalWinners state={state} />
             )}
         </Container>
     );

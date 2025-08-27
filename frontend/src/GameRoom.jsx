@@ -39,7 +39,7 @@ export function GameRoom() {
                         setDeadline(Date.now() + ((gameState.durations[gameState.stage] || 0) * 1000));
                     }
                 } catch { }
-                setError('');
+                // Do not clear error automatically; keep it visible until next user action
             } catch (err) {
                 console.error("Failed to fetch game state:", err);
                 setError(`Game not found or an error occurred. Code: ${gameCode}`);
@@ -162,11 +162,7 @@ export function GameRoom() {
                 <Group position="center" mt="xs">
                     <Badge color='red'>Finished</Badge>
                 </Group>
-                <FinalWinners
-                    game={game}
-                    remainingSec={Math.max(0, Math.ceil(((game?.stage_deadline ? (game.stage_deadline * 1000) : Date.now()) - nowTs) / 1000))}
-                    onReturn={() => navigate('/')}
-                />
+                <FinalWinners game={game} onReturn={() => navigate('/')} />
                 {error && <Text color="red" mt="md">{error}</Text>}
             </Container>
         );
@@ -183,7 +179,7 @@ export function GameRoom() {
                 {isInProgress && (
                     <Badge color="grape">{game.stage === 'scoreboard' ? 'Scoreboard' : (game.stage === 'guessing' ? 'Guessing' : 'Round intro')}</Badge>
                 )}
-                {!isInProgress && <Text c="dimmed" size="sm">{allReady ? 'Everyone is ready' : 'Waiting for all players to be ready'}</Text>}
+                {game.status === 'lobby' && <Text c="dimmed" size="sm">{allReady ? 'Everyone is ready' : 'Waiting for all players to be ready'}</Text>}
             </Group>
 
             <SimpleGrid cols={2} spacing="lg" mt="lg">
@@ -209,6 +205,7 @@ export function GameRoom() {
                     {game.status === 'lobby' && currentPlayer && isController && allReady && (
                         <Button mt="md" onClick={async () => {
                             try {
+                                setError('');
                                 await api.startGame(gameCode, currentPlayer.id);
                                 const updated = await api.getGameState(gameCode);
                                 setGame(updated);
@@ -257,13 +254,7 @@ export function GameRoom() {
                             )}
                         </Paper>
                     )}
-                    {isFinished && (
-                        <FinalWinners
-                            game={game}
-                            remainingSec={Math.max(0, Math.ceil(((game?.stage_deadline ? (game.stage_deadline * 1000) : Date.now()) - nowTs) / 1000))}
-                            onReturn={() => navigate('/')}
-                        />
-                    )}
+                    {/* Final screen handled by early return; nothing else renders when finished */}
                 </div>
 
             </SimpleGrid>

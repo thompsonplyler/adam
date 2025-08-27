@@ -1,6 +1,6 @@
 import { Paper, Title, Text, Group, Badge, Stack } from '@mantine/core';
 
-export default function FinalWinners({ state, remainingSec }: { state: any; remainingSec?: number }) {
+export default function FinalWinners({ state }: { state: any }) {
     const winners = (state?.winners && state.winners.length)
         ? state.winners
         : deriveWinnersFromPlayers(state?.players || []);
@@ -16,9 +16,6 @@ export default function FinalWinners({ state, remainingSec }: { state: any; rema
                     </Group>
                 ))}
             </Stack>
-            {typeof remainingSec === 'number' && (
-                <Text c="dimmed" mt="sm">Returning in {remainingSec}s</Text>
-            )}
         </Paper>
     );
 }

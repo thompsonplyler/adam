@@ -275,20 +275,6 @@ def advance_round(game_code):
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
         _schedule_stage_timer(current_app._get_current_object(), game.id)
         return jsonify(game.to_dict())
-    # If already at scoreboard due to early auto-advance triggered by guesses,
-    # treat this call as idempotent (no-op) so clients expecting a transition
-    # to scoreboard still receive scoreboard instead of skipping ahead.
-    if game.stage == 'scoreboard' and game.current_story_id:
-        try:
-            author_id = Story.query.get(game.current_story_id).author_id
-            total_players = Player.query.filter_by(game_id=game.id).count()
-            eligible_guessers = max(0, total_players - 1 if author_id else total_players)
-            count = Guess.query.filter_by(story_id=game.current_story_id).count()
-            if eligible_guessers > 0 and count >= eligible_guessers:
-                return jsonify(game.to_dict())
-        except Exception:
-            pass
-
     if game.current_round < game.total_rounds:
         game.current_round += 1
         game.stage = 'round_intro'
