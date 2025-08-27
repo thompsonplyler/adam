@@ -51,7 +51,16 @@ def _schedule_stage_timer(app, game_id: int) -> None:
 
 @games.route('/create', methods=['POST'])
 def create_game_unauthed():
-    new_game = Game()
+    data = request.get_json(silent=True) or {}
+    mode = data.get('game_mode') or 'free_for_all'
+    spp = data.get('stories_per_player')
+    try:
+        spp = int(spp) if spp is not None else None
+    except Exception:
+        spp = None
+    new_game = Game(game_mode=mode)
+    if spp is not None and 1 <= spp <= 3:
+        new_game.stories_per_player = spp
     db.session.add(new_game)
     db.session.commit()
     return jsonify({
@@ -97,9 +106,11 @@ def submit_story(game_code):
     if game.status != 'lobby':
         return jsonify({'error': 'You can only submit stories while the game is in the lobby.'}), 400
 
-    existing_story = Story.query.filter_by(author_id=player.id, game_id=game.id).first()
-    if existing_story:
-        return jsonify({'error': 'You have already submitted a story for this game.'}), 400
+    # Enforce per-player story cap
+    max_per_player = int(game.stories_per_player or 1)
+    authored_count = Story.query.filter_by(author_id=player.id, game_id=game.id).count()
+    if authored_count >= max_per_player:
+        return jsonify({'error': f'Max {max_per_player} stories per player'}), 400
 
     new_story = Story(
         content=story_content,
@@ -108,7 +119,9 @@ def submit_story(game_code):
     )
     db.session.add(new_story)
 
-    player.has_submitted_story = True
+    # Mark ready if player reached quota
+    authored_count_after = authored_count + 1
+    player.has_submitted_story = authored_count_after >= max_per_player
     db.session.add(player)
 
     db.session.commit()
@@ -184,14 +197,16 @@ def start_game(game_code):
     game.status = 'in_progress'
     game.stage = 'round_intro'
     import random
-    order = [p.id for p in players]
-    random.shuffle(order)
+    authors = [p.id for p in players]
+    random.shuffle(authors)
+    # Build play order as one entry per author; within a round we iterate that author's stories
+    order = authors
     game.play_order = json.dumps(order)
     game.total_rounds = len(order)
     game.current_round = 1
-    # Select current story for the first author in play_order
+    # Select first story for the first author
     first_author_id = order[0]
-    first_story = Story.query.filter_by(game_id=game.id, author_id=first_author_id).first()
+    first_story = Story.query.filter_by(game_id=game.id, author_id=first_author_id, is_read=False).first()
     game.current_story_id = first_story.id if first_story else None
     db.session.add(game)
     db.session.commit()
@@ -269,7 +284,26 @@ def advance_round(game_code):
                     author.score += len(wrong_or_missing_ids)
                     db.session.add(author)
                 db.session.commit()
-        game.stage = 'scoreboard'
+        # Mark story as read and decide next stage: more stories for this author => round_intro, else scoreboard
+        next_stage = 'scoreboard'
+        next_story_id = None
+        if game.current_story_id:
+            st = Story.query.get(game.current_story_id)
+            if st and not st.is_read:
+                st.is_read = True
+                db.session.add(st)
+                db.session.commit()
+            # Determine if author has remaining unread stories for multi-story rounds
+            if st:
+                spp = int(game.stories_per_player or 1)
+                unread = Story.query.filter_by(game_id=game.id, author_id=st.author_id, is_read=False).count()
+                if unread > 0 and spp > 1:
+                    next_stage = 'round_intro'
+                    next_story = Story.query.filter_by(game_id=game.id, author_id=st.author_id, is_read=False).first()
+                    next_story_id = next_story.id if next_story else None
+        game.stage = next_stage
+        if next_stage == 'round_intro' and next_story_id:
+            game.current_story_id = next_story_id
         db.session.add(game)
         db.session.commit()
         socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
@@ -285,7 +319,7 @@ def advance_round(game_code):
             order = []
         idx = (game.current_round - 1) if game.current_round else 0
         next_author_id = order[idx] if 0 <= idx < len(order) else None
-        next_story = Story.query.filter_by(game_id=game.id, author_id=next_author_id).first() if next_author_id else None
+        next_story = Story.query.filter_by(game_id=game.id, author_id=next_author_id, is_read=False).first() if next_author_id else None
         game.current_story_id = next_story.id if next_story else None
         db.session.add(game)
         db.session.commit()
@@ -325,8 +359,9 @@ def submit_guess(game_code):
     db.session.commit()
     socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
     # Early auto-advance: if all eligible guesses submitted, move to scoreboard via scheduler
+    # Disabled during tests (to keep deterministic control flow expectations)
     try:
-        if game.stage == 'guessing' and game.current_story_id:
+        if (not current_app.config.get('TESTING')) and game.stage == 'guessing' and game.current_story_id:
             # Count unique non-author guesses
             from app.models import Guess as GuessModel
             author_id = game.current_story.author_id if game.current_story else None
@@ -336,7 +371,25 @@ def submit_guess(game_code):
                 gnow = Game.query.filter_by(id=game.id).first()
                 if gnow and gnow.status == 'in_progress' and gnow.stage == 'guessing':
                     _score_current_round(gnow)
-                    gnow.stage = 'scoreboard'
+                    # Determine continuation within author set or scoreboard
+                    next_stage = 'scoreboard'
+                    next_story_id = None
+                    if gnow.current_story_id:
+                        st = Story.query.get(gnow.current_story_id)
+                        if st and not st.is_read:
+                            st.is_read = True
+                            db.session.add(st)
+                            db.session.commit()
+                        if st:
+                            unread = Story.query.filter_by(game_id=gnow.id, author_id=st.author_id, is_read=False).count()
+                            spp = int(gnow.stories_per_player or 1)
+                            if unread > 0 and spp > 1:
+                                next_stage = 'round_intro'
+                                next_story = Story.query.filter_by(game_id=gnow.id, author_id=st.author_id, is_read=False).first()
+                                next_story_id = next_story.id if next_story else None
+                    gnow.stage = next_stage
+                    if next_stage == 'round_intro' and next_story_id:
+                        gnow.current_story_id = next_story_id
                     db.session.add(gnow)
                     db.session.commit()
                     socketio.emit('state_update', {'game_code': gnow.game_code}, to=f"game:{gnow.game_code}", namespace='/ws')

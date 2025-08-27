@@ -44,8 +44,8 @@ export type GameState = {
     }>;
 };
 
-export async function createGame(): Promise<{ game_code: string }> {
-    return request('/api/games/create', { method: 'POST' });
+export async function createGame(opts?: { game_mode?: string; stories_per_player?: number }): Promise<{ game_code: string }> {
+    return request('/api/games/create', { method: 'POST', body: JSON.stringify(opts || {}) });
 }
 
 export async function getGameState(gameCode: string): Promise<GameState> {

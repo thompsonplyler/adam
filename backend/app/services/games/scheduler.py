@@ -111,7 +111,25 @@ def schedule_stage_timer(app, game_id: int) -> None:
 
             if expected_stage == 'guessing':
                 score_current_round(g)
-                g.stage = 'scoreboard'
+                # After scoring, either continue with next unread story for same author (round_intro) or show scoreboard
+                next_stage = 'scoreboard'
+                next_story_id = None
+                if g.current_story_id:
+                    st = Story.query.get(g.current_story_id)
+                    if st and not st.is_read:
+                        st.is_read = True
+                        db.session.add(st)
+                        db.session.commit()
+                    if st:
+                        unread = Story.query.filter_by(game_id=g.id, author_id=st.author_id, is_read=False).count()
+                        spp = int(g.stories_per_player or 1)
+                        if unread > 0 and spp > 1:
+                            next_stage = 'round_intro'
+                            next_story = Story.query.filter_by(game_id=g.id, author_id=st.author_id, is_read=False).first()
+                            next_story_id = next_story.id if next_story else None
+                g.stage = next_stage
+                if next_stage == 'round_intro' and next_story_id:
+                    g.current_story_id = next_story_id
                 db.session.add(g)
                 db.session.commit()
                 socketio.emit('state_update', {'game_code': g.game_code}, to=f"game:{g.game_code}", namespace='/ws')
@@ -129,7 +147,7 @@ def schedule_stage_timer(app, game_id: int) -> None:
                     idx = (g.current_round - 1) if g.current_round else 0
                     next_author_id = order[idx] if 0 <= idx < len(order) else None
                     next_story = (
-                        Story.query.filter_by(game_id=g.id, author_id=next_author_id).first() if next_author_id else None
+                        Story.query.filter_by(game_id=g.id, author_id=next_author_id, is_read=False).first() if next_author_id else None
                     )
                     g.current_story_id = next_story.id if next_story else None
                 else:

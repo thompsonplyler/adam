@@ -18,6 +18,7 @@ export default function FinalWinners({ game, onReturn }) {
             </Stack>
             <Group mt="md">
                 <Button variant="outline" onClick={onReturn}>Return to Main Menu</Button>
+                <Button onClick={() => window.location.reload()}>Play Another</Button>
             </Group>
         </Paper>
     );

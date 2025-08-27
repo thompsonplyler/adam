@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Text, Group, Badge, Button, Stack, Paper, Divider, CopyButton, Tooltip, ActionIcon, List } from '@mantine/core';
+import { Container, Title, Text, Group, Badge, Button, Stack, Paper, Divider, CopyButton, Tooltip, ActionIcon, List, Select, NumberInput } from '@mantine/core';
 import { io, Socket } from 'socket.io-client';
 import { createGame, getGameState, type GameState } from '../lib/api';
 import RoundIntro from './stages/RoundIntro';
@@ -17,6 +17,8 @@ export function App() {
     const [deadline, setDeadline] = useState<number | null>(null);
     const [nowTs, setNowTs] = useState<number>(Date.now());
     const [apiError, setApiError] = useState<string | null>(null);
+    const [gameMode, setGameMode] = useState<string>('free_for_all');
+    const [storiesPerPlayer, setStoriesPerPlayer] = useState<number>(1);
 
     useEffect(() => {
         const baseUrl = (import.meta as any).env.VITE_API_URL || (globalThis as any).process?.env?.API_URL || 'http://localhost:5000';
@@ -68,7 +70,7 @@ export function App() {
     const handleCreate = async () => {
         setCreating(true); setApiError(null);
         try {
-            const res = await createGame();
+            const res = await createGame({ game_mode: gameMode, stories_per_player: storiesPerPlayer });
             setGameCode(res.game_code);
             if (socket) socket.emit('join_game', { game_code: res.game_code, is_session_owner: true });
         } catch (e: any) {
@@ -101,7 +103,23 @@ export function App() {
             </Group>
             <Paper withBorder p="md" mt="md">
                 <Stack>
-                    <Group>
+                    <Group align="flex-end">
+                        <Select
+                            label="Mode"
+                            data={[{ value: 'free_for_all', label: 'Free for All' }, { value: 'teams', label: 'Teams (WIP)' }]}
+                            value={gameMode}
+                            onChange={(v) => setGameMode(v || 'free_for_all')}
+                            w={200}
+                        />
+                        <NumberInput
+                            label="Stories per player"
+                            min={1}
+                            max={3}
+                            value={storiesPerPlayer}
+                            onChange={(v) => setStoriesPerPlayer(Number(v) || 1)}
+                            w={200}
+                        />
+                        <Divider orientation="vertical" h={36} />
                         <Button onClick={handleCreate} loading={creating}>Start Game</Button>
                         {gameCode && (
                             <Group>

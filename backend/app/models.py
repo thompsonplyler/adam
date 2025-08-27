@@ -30,8 +30,9 @@ class Player(db.Model):
     game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False)
     score = db.Column(db.Integer, default=0)
     has_submitted_story = db.Column(db.Boolean, default=False, nullable=False)
+    team = db.Column(db.String(32), nullable=True)
     game = db.relationship('Game', back_populates='players')
-    story = db.relationship('Story', backref='author', uselist=False)
+    stories = db.relationship('Story', backref='author', uselist=True)
 
     def to_dict(self):
         return {
@@ -39,7 +40,8 @@ class Player(db.Model):
             'name': self.name,
             'game_id': self.game_id,
             'score': self.score,
-            'has_submitted_story': self.has_submitted_story
+            'has_submitted_story': self.has_submitted_story,
+            'team': self.team
         }
 
 def generate_game_code(length=4):
@@ -55,6 +57,8 @@ class Game(db.Model):
     game_code = db.Column(db.String(4), unique=True, index=True)
     status = db.Column(db.String(64), default='lobby') # lobby, in_progress, finished
     stage = db.Column(db.String(64), nullable=True) # round_intro, guessing, scoreboard, finished (when status is finished)
+    game_mode = db.Column(db.String(32), default='free_for_all')
+    stories_per_player = db.Column(db.Integer, default=1)
     players = db.relationship('Player', back_populates='game')
     stories = db.relationship('Story', foreign_keys='Story.game_id', backref='game', lazy='dynamic')
     current_story_id = db.Column(db.Integer, db.ForeignKey('story.id', name='fk_game_current_story_id', use_alter=True), nullable=True)
@@ -106,6 +110,8 @@ class Game(db.Model):
             'game_code': self.game_code,
             'status': self.status,
             'stage': self.stage,
+            'game_mode': self.game_mode,
+            'stories_per_player': self.stories_per_player,
             'stage_deadline': self.stage_deadline,
             'players': players_serialized,
             'current_story': self.current_story.to_dict() if self.current_story else None,
