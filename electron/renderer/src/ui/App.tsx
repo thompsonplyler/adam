@@ -52,6 +52,16 @@ export function App() {
             setState(null);
             setRoom('');
         });
+        s.on('replay_started', (m: any) => {
+            // Move host to new game code
+            try {
+                if (m?.to) {
+                    localStorage.setItem('game_code', m.to);
+                    setGameCode(m.to);
+                    if (socket) socket.emit('join_game', { game_code: m.to, is_session_owner: true });
+                }
+            } catch { }
+        });
         return () => { s.disconnect(); };
     }, [gameCode]);
 

@@ -48,6 +48,10 @@ export async function createGame(opts?: { game_mode?: string; stories_per_player
     return request('/api/games/create', { method: 'POST', body: JSON.stringify(opts || {}) });
 }
 
+export async function startReplay(game_code: string, controller_id: number): Promise<{ game_code: string }> {
+    return request(`/api/games/${game_code}/replay/start`, { method: 'POST', body: JSON.stringify({ controller_id }) });
+}
+
 export async function getGameState(gameCode: string): Promise<GameState> {
     return request(`/api/games/${gameCode}/state`);
 }

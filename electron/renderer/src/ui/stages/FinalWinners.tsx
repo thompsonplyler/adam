@@ -1,4 +1,5 @@
-import { Paper, Title, Text, Group, Badge, Stack } from '@mantine/core';
+import { Paper, Title, Text, Group, Badge, Stack, Button } from '@mantine/core';
+import { startReplay } from '../../lib/api';
 
 export default function FinalWinners({ state }: { state: any }) {
     const winners = (state?.winners && state.winners.length)
@@ -16,6 +17,14 @@ export default function FinalWinners({ state }: { state: any }) {
                     </Group>
                 ))}
             </Stack>
+            <Group mt="md">
+                <Button onClick={async () => {
+                    try {
+                        const controllerId = Math.min(...(state?.players || []).map((p: any) => p.id));
+                        await startReplay(state?.game_code, controllerId);
+                    } catch { }
+                }}>Start Replay</Button>
+            </Group>
         </Paper>
     );
 }

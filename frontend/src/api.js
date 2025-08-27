@@ -81,3 +81,17 @@ export const submitGuess = (game_code, guesser_id, guessed_player_id) => {
         body: JSON.stringify({ guesser_id, guessed_player_id })
     });
 };
+
+export const voteReplay = (game_code, player_id) => {
+    return request(`/api/games/${game_code}/replay/vote`, {
+        method: 'POST',
+        body: JSON.stringify({ player_id }),
+    });
+};
+
+export const startReplay = (game_code, controller_id) => {
+    return request(`/api/games/${game_code}/replay/start`, {
+        method: 'POST',
+        body: JSON.stringify({ controller_id }),
+    });
+};

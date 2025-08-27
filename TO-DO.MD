@@ -1,0 +1,4 @@
+- Fun interstitial for the time between when users have submitted their stories but others have not. Music, animation, whatever.
+- Some sort of very quick and low power tool to splash out a cool image/ joke/ insult/ etc. about users' choices in the game.
+- Transitions and transformations -- how do they play with Mantine?
+-

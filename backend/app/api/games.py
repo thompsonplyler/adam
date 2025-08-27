@@ -6,6 +6,7 @@ import time
 from typing import Set, Tuple
 from app.services.games.scoring import score_current_round as svc_score_current_round
 from app.services.games.scheduler import schedule_stage_timer as svc_schedule_stage_timer
+from collections import defaultdict
 
 
 games = Blueprint('games', __name__)
@@ -13,6 +14,7 @@ games = Blueprint('games', __name__)
 # Centralized stage timer scheduler (runtime-only; disabled in tests)
 _scheduled_stage_keys: Set[Tuple[int, str, int]] = set()
 _last_controller_action: dict[str, float] = {}
+_replay_votes: dict[str, set[int]] = defaultdict(set)  # keyed by game_code -> set of player ids
 
 def _score_current_round(game: Game) -> None:
     svc_score_current_round(game)
@@ -147,6 +149,11 @@ def get_game_state(game_code):
         durations = {'round_intro': 5, 'guessing': 20, 'scoreboard': 6}
     payload = game.to_dict()
     payload['durations'] = durations
+    # Attach replay votes count for clients on final screen
+    try:
+        payload['replay_votes'] = len(_replay_votes.get(game.game_code, set()))
+    except Exception:
+        payload['replay_votes'] = 0
     return jsonify(payload)
 
 
@@ -397,3 +404,52 @@ def submit_guess(game_code):
     except Exception:
         pass
     return jsonify({'message': 'Guess submitted'})
+
+
+@games.route('/<string:game_code>/replay/vote', methods=['POST'])
+def vote_replay(game_code):
+    data = request.get_json() or {}
+    player_id = data.get('player_id')
+    game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
+    if game.status != 'finished':
+        return jsonify({'error': 'Replay voting only available after game finished'}), 400
+    if not Player.query.filter_by(id=player_id, game_id=game.id).first():
+        return jsonify({'error': 'Invalid player'}), 400
+    _replay_votes.setdefault(game.game_code, set()).add(int(player_id))
+    socketio.emit('state_update', {'game_code': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+    return jsonify({'ok': True, 'votes': len(_replay_votes.get(game.game_code, set()))})
+
+
+@games.route('/<string:game_code>/replay/start', methods=['POST'])
+def start_replay(game_code):
+    data = request.get_json() or {}
+    controller_id = data.get('controller_id')
+    game = Game.query.filter_by(game_code=game_code.upper()).first_or_404()
+    if game.status != 'finished':
+        return jsonify({'error': 'Game not finished'}), 400
+    players = Player.query.filter_by(game_id=game.id).all()
+    if not players:
+        return jsonify({'error': 'No players'}), 400
+    expected_controller = min(p.id for p in players)
+    if controller_id != expected_controller:
+        return jsonify({'error': 'Only the controller may start replay'}), 403
+    # Require unanimous consent of players who finished the game
+    voted = _replay_votes.get(game.game_code, set())
+    player_ids = {p.id for p in players}
+    if not player_ids.issubset(voted):
+        return jsonify({'error': 'Not all players voted replay'}), 400
+    # Create a fresh game with same mode/length
+    new_game = Game(game_mode=game.game_mode, stories_per_player=game.stories_per_player)
+    db.session.add(new_game)
+    db.session.commit()
+    # Notify all clients to navigate to new game
+    socketio.emit('replay_started', {'from': game.game_code, 'to': new_game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
+    # End old session and cleanup
+    try:
+        from app.socketio_events import _end_session
+        _end_session(game.game_code)
+    except Exception:
+        pass
+    # Clear votes
+    _replay_votes.pop(game.game_code, None)
+    return jsonify({'game_code': new_game.game_code})
