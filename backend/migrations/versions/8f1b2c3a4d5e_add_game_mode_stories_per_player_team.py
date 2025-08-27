@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '8f1b2c3a4d5e'
-down_revision = 'd4d5eabfd23e'
+down_revision = 'aaddaf18b59a'
 branch_labels = None
 depends_on = None
 
@@ -19,6 +19,11 @@ depends_on = None
 def upgrade():
     bind = op.get_bind()
     insp = sa.inspect(bind)
+
+    # If legacy plural tables detected (fresh install), no-op here; the prior migration creates singular tables.
+    existing_tables = set(insp.get_table_names())
+    if 'game' not in existing_tables:
+        return
 
     # Add columns to game
     game_cols = {c['name'] for c in insp.get_columns('game')}
@@ -30,9 +35,10 @@ def upgrade():
         op.execute("UPDATE game SET stories_per_player = 1 WHERE stories_per_player IS NULL")
 
     # Add team to player
-    player_cols = {c['name'] for c in insp.get_columns('player')}
-    if 'team' not in player_cols:
-        op.add_column('player', sa.Column('team', sa.String(length=32), nullable=True))
+    if 'player' in existing_tables:
+        player_cols = {c['name'] for c in insp.get_columns('player')}
+        if 'team' not in player_cols:
+            op.add_column('player', sa.Column('team', sa.String(length=32), nullable=True))
 
 
 def downgrade():

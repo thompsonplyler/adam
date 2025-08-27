@@ -11,15 +11,20 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'e3f1b2c34add'
-down_revision = 'd4d5eabfd23e'
+down_revision = 'aaddaf18b59a'
 branch_labels = None
 depends_on = None
 
 
 def upgrade():
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    cols = {c['name'] for c in insp.get_columns('game')}
     with op.batch_alter_table('game') as batch_op:
-        batch_op.add_column(sa.Column('stage_deadline', sa.Float(), nullable=True))
-        batch_op.add_column(sa.Column('round_history', sa.Text(), nullable=True))
+        if 'stage_deadline' not in cols:
+            batch_op.add_column(sa.Column('stage_deadline', sa.Float(), nullable=True))
+        if 'round_history' not in cols:
+            batch_op.add_column(sa.Column('round_history', sa.Text(), nullable=True))
 
 
 def downgrade():
