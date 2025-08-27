@@ -136,9 +136,11 @@ Config toggles (optional):
 ## Deployment (Backend)
 
 - Recommended: Gunicorn + eventlet for Flask-SocketIO
-  ```bash
-  gunicorn --worker-class eventlet -w 1 run:app --bind 0.0.0.0:5000
-  ```
+  - Procfile (already included at `backend/Procfile`):
+    ```
+    web: gunicorn --worker-class eventlet -w 1 run:app --bind 0.0.0.0:$PORT
+    ```
+  - Render: create a Web Service from GitHub, root: `backend/`, Start command auto-detected from Procfile.
 - Required env: `DATABASE_URL`, `SECRET_KEY`, plus stage durations and `MIN_PLAYERS` as needed
 - Ensure your platform enables websockets and long-polling
 

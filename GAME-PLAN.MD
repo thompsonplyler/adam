@@ -169,3 +169,73 @@ Each item above must be covered by tests and/or manual verification steps listed
 - Backend: introduce host lifecycle signals (heartbeat or presence-based) and a `session_ended` event; delete/cleanup game on host end. [Partially Implemented]
 - Frontend (web): make the default screen an "Enter code" join view; designate first joiner as controller; add readiness gating. [Implemented]
 - Electron: ensure UI never exposes "Join"; keep only "Start Game" and lobby/display. [In Progress]
+
+---
+
+## Spec Alignment – Remaining Work from Design Spec (non-yellow)
+
+This section tracks items from the original design spec that remain to be implemented in v1 (yellow items are explicitly deferred).
+
+1. Game Modes
+
+- Free‑for‑All (current behavior) [Implemented]
+- Teams (new)
+  - Add `team` field to `Player`
+  - Lobby UI to pick team (Electron display and web client)
+  - Guessing restrictions: show only opposite‑team names as options
+  - Scoring: keep current rules per round; totals per player (future: team totals)
+  - Tests: team assignment, guessing filter, scoring unchanged
+
+2. Game Length / Stories‑per‑Player
+
+- Host selects game length at session creation (Electron): Short/Average/Marathon → maps to stories per player (e.g., 1/2/3)
+- Backend adds `stories_per_player` (or `rounds_per_player`) to `Game`
+- Lobby requires each player to submit all of their stories upfront
+- Compute `total_rounds = players_count * stories_per_player`
+- Play order: expand authors list so each player appears `stories_per_player` times, then shuffle
+- Validations: cannot start until each player submitted exactly `stories_per_player` stories
+- Tests: total rounds calculation, start validation, multi‑story rotation
+
+3. Reveal Author callout on Scoreboard
+
+- Explicitly show: “Author: <name>” on scoreboard [Planned]
+
+4. Final Screen polish
+
+- Winner(s) shown (done). Add “Play Another” → creates new Electron session and shows new code to all clients [Planned]
+
+5. Must‑Pass Gates for the above
+
+- Teams: team choice persists; guessing only shows opposite team; tests green
+- Game length: cannot start early; `total_rounds` correct; rotation covers each story once
+- No regressions: timers, early guessing end, scoring, session lifecycle, and winner screen remain correct
+
+---
+
+## Implementation Plan (next milestones)
+
+1. Data model & API
+
+- Add `Game.game_mode` ('free_for_all' | 'teams'), `Game.stories_per_player` (int)
+- Add `Player.team` (nullable early; required when teams mode)
+- Update serializers and state to expose these fields
+
+2. Host (Electron)
+
+- Pre‑lobby configuration screen: select mode + length
+- Broadcast chosen settings to web clients with first `state_update`
+
+3. Web (lobby)
+
+- If teams mode, allow team selection
+- Story submission UI supports multiple stories up‑front with clear progress/counter
+- Start button enabled only when all players hit the required count
+
+4. Engine
+
+- Build multi‑story play order and set `total_rounds`
+- Enforce guesser filtering in teams mode
+
+5. Tests
+
+- Unit/integration for start validation, play order, teams guessing filter, and scoreboard author callout
