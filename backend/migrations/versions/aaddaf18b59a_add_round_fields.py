@@ -21,24 +21,20 @@ def upgrade():
     bind = op.get_bind()
     insp = sa.inspect(bind)
 
-    # If legacy plural tables exist, drop them safely
+    # If legacy plural tables exist, drop them safely with CASCADE in dependency order
+    existing_tables = set(insp.get_table_names())
+    if 'guesses' in existing_tables:
+        op.execute('DROP TABLE IF EXISTS guesses CASCADE;')
+    existing_tables = set(insp.get_table_names())
+    if 'stories' in existing_tables:
+        op.execute('DROP TABLE IF EXISTS stories CASCADE;')
+    existing_tables = set(insp.get_table_names())
+    if 'players' in existing_tables:
+        op.execute('DROP TABLE IF EXISTS players CASCADE;')
     existing_tables = set(insp.get_table_names())
     if 'games' in existing_tables:
-        try:
-            with op.batch_alter_table('games', schema=None) as batch_op:
-                try:
-                    batch_op.drop_index(batch_op.f('ix_games_game_code'))
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        op.drop_table('games')
-    if 'stories' in existing_tables:
-        op.drop_table('stories')
-    if 'players' in existing_tables:
-        op.drop_table('players')
-    if 'guesses' in existing_tables:
-        op.drop_table('guesses')
+        # Drop any indexes implicitly when dropping
+        op.execute('DROP TABLE IF EXISTS games CASCADE;')
 
     # Create singular tables if they do not exist yet
     existing_tables = set(insp.get_table_names())
