@@ -83,11 +83,10 @@ export function GameRoom() {
         });
         socket.on('replay_started', (m) => {
             try {
-                if (m?.to) {
-                    // Clear old player id; new game will enroll via join flow
-                    try { sessionStorage.removeItem(`player_id_${gameCode}`); } catch { }
-                    navigate(`/game/${m.to}`);
-                }
+                const to = (m && m.to) ? m.to : gameCode;
+                // Clear old player id; next join will set for same/new code
+                try { sessionStorage.removeItem(`player_id_${gameCode}`); } catch { }
+                navigate(`/game/${to}`);
             } catch { }
         });
         socket.on('connected', () => { });

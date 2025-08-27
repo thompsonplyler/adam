@@ -438,18 +438,37 @@ def start_replay(game_code):
     player_ids = {p.id for p in players}
     if not player_ids.issubset(voted):
         return jsonify({'error': 'Not all players voted replay'}), 400
-    # Create a fresh game with same mode/length
-    new_game = Game(game_mode=game.game_mode, stories_per_player=game.stories_per_player)
-    db.session.add(new_game)
-    db.session.commit()
-    # Notify all clients to navigate to new game
-    socketio.emit('replay_started', {'from': game.game_code, 'to': new_game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
-    # End old session and cleanup
+    # Reset existing game in-place to lobby with same settings
+    # Cleanup dependent rows
     try:
-        from app.socketio_events import _end_session
-        _end_session(game.game_code)
+        # Clear current story pointer to avoid FK issues
+        if getattr(game, 'current_story_id', None):
+            game.current_story_id = None
+            db.session.add(game)
+            db.session.commit()
+        # Delete guesses and stories
+        for st in Story.query.filter_by(game_id=game.id).all():
+            Guess.query.filter_by(story_id=st.id).delete()
+        Story.query.filter_by(game_id=game.id).delete()
+        db.session.commit()
     except Exception:
-        pass
+        db.session.rollback()
+    # Reset players and round scaffolding
+    for p in Player.query.filter_by(game_id=game.id).all():
+        p.has_submitted_story = False
+        p.score = 0
+        db.session.add(p)
+    game.status = 'lobby'
+    game.stage = None
+    game.current_round = None
+    game.total_rounds = None
+    game.play_order = None
+    game.stage_deadline = None
+    game.round_history = json.dumps([])
+    db.session.add(game)
+    db.session.commit()
+    # Notify all clients in the same room; reuse same code
+    socketio.emit('replay_started', {'from': game.game_code, 'to': game.game_code}, to=f"game:{game.game_code}", namespace='/ws')
     # Clear votes
     _replay_votes.pop(game.game_code, None)
-    return jsonify({'game_code': new_game.game_code})
+    return jsonify({'game_code': game.game_code})
