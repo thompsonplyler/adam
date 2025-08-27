@@ -20,9 +20,13 @@ export default function FinalWinners({ state }: { state: any }) {
             <Group mt="md">
                 <Button onClick={async () => {
                     try {
-                        const controllerId = Math.min(...(state?.players || []).map((p: any) => p.id));
+                        const players = (state?.players || []) as any[];
+                        if (!players.length) return;
+                        const controllerId = Math.min(...players.map((p: any) => p.id));
                         await startReplay(state?.game_code, controllerId);
-                    } catch { }
+                    } catch (e) {
+                        // no-op
+                    }
                 }}>Start Replay</Button>
             </Group>
         </Paper>

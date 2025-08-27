@@ -81,6 +81,15 @@ export function GameRoom() {
             try { sessionStorage.removeItem(`player_id_${gameCode}`); } catch { }
             navigate('/');
         });
+        socket.on('replay_started', (m) => {
+            try {
+                if (m?.to) {
+                    // Clear old player id; new game will enroll via join flow
+                    try { sessionStorage.removeItem(`player_id_${gameCode}`); } catch { }
+                    navigate(`/game/${m.to}`);
+                }
+            } catch { }
+        });
         socket.on('connected', () => { });
         socket.on('joined', () => { });
         socket.on('error', (payload) => { console.warn('Socket error', payload); });
