@@ -201,7 +201,14 @@ export function GameRoom() {
 
                 <div>
                     {game.status === 'lobby' && !currentPlayer && <JoinGameForm onJoin={handleJoinGame} loading={loading} />}
-                    {game.status === 'lobby' && currentPlayer && <PlayerLobby player={currentPlayer} onStorySubmit={handleStorySubmit} loading={loading} />}
+                    {game.status === 'lobby' && currentPlayer && (
+                        <PlayerLobby
+                            player={currentPlayer}
+                            onStorySubmit={handleStorySubmit}
+                            loading={loading}
+                            requiredCount={game.stories_per_player || 1}
+                        />
+                    )}
                     {game.status === 'lobby' && currentPlayer && isController && allReady && (
                         <Button mt="md" onClick={async () => {
                             try {
